@@ -2,6 +2,7 @@
 
 
 #include "TKTurnComponentBase.h"
+#include "TKGameStateBase.h"
 
 // Sets default values for this component's properties
 UTKTurnComponentBase::UTKTurnComponentBase(const FObjectInitializer& Initializer)
@@ -9,4 +10,13 @@ UTKTurnComponentBase::UTKTurnComponentBase(const FObjectInitializer& Initializer
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+}
+
+UTKTurnComponentBase* UTKTurnComponentBase::Get(const ATKGameStateBase* GameState)
+{
+	if (GameState == nullptr)
+		return nullptr;
+	if (!IsValid(GameState))
+		return nullptr;
+	return GameState->TurnComponent.Get();
 }

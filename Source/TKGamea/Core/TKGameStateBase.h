@@ -16,6 +16,7 @@ class TKGAMEA_API ATKGameStateBase : public AGameState
 	GENERATED_BODY()
 	ATKGameStateBase(const FObjectInitializer& Initializer);
 private:
+	friend class UTKTurnComponentBase;
 	UPROPERTY()
 	TObjectPtr<UTKTurnComponentBase> TurnComponent;
 };

@@ -9,3 +9,9 @@ ATKGameModeBase::ATKGameModeBase(const FObjectInitializer& ObjectInitializer)
 {
 	
 }
+
+void ATKGameModeBase::OnMatchStateSet()
+{
+	Super::OnMatchStateSet();
+	
+}

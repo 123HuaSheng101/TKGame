@@ -15,4 +15,6 @@ class TKGAMEA_API ATKGameModeBase : public AGameMode
 {
 	GENERATED_BODY()
 	ATKGameModeBase(const FObjectInitializer& Initializer);
+protected:
+	virtual void OnMatchStateSet() override; 
 };
