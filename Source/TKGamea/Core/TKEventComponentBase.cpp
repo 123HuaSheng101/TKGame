@@ -21,7 +21,11 @@ UTKEventComponentBase* UTKEventComponentBase::Get(const ATKPlayerControllerBase*
 	if (PlayerController && IsValid(PlayerController))
 	{
 		UTKEventComponentBase* EventComponent = Cast<UTKEventComponentBase>(PlayerController->GetComponentByClass(UTKEventComponentBase::StaticClass()));
-		check(EventComponent);
+		if (EventComponent == nullptr)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("UTKEventComponentBase::Get - EventComponent not found on PlayerController"));
+			return nullptr;
+		}
 		return EventComponent;
 	}
 	return nullptr;
