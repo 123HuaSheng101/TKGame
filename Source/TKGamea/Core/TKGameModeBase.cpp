@@ -26,8 +26,13 @@ ATKGameModeBase::ATKGameModeBase(const FObjectInitializer& ObjectInitializer)
 	DeckComponent = CreateDefaultSubobject<UTKDeckComponent>("DeckComponent");
 	IdentityRule = CreateDefaultSubobject<UTKIdentityRuleComponent>("IdentityRuleComponent");
 
-	// 默认 PlayerState 类
+	// 禁止自动开始匹配，等待 StartIdentityGame 手动触发
+	bDelayedStart = true;
+
+	// 默认类绑定
+	PlayerControllerClass = ATKPlayerControllerBase::StaticClass();
 	PlayerStateClass = ATKPlayerStateBase::StaticClass();
+	GameStateClass = ATKGameStateBase::StaticClass();
 }
 
 void ATKGameModeBase::OnMatchStateSet()

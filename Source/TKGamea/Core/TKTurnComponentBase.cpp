@@ -5,6 +5,7 @@
 #include "TKPlayerStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 
 UTKTurnComponentBase::UTKTurnComponentBase(const FObjectInitializer& Initializer)
 	: Super(Initializer)
@@ -105,8 +106,54 @@ void UTKTurnComponentBase::EndTurn()
 	UE_LOG(LogTemp, Log, TEXT("=== Turn %d End: Player [%s] ==="), CurrentTurnNumber,
 		CurrentPlayer ? *CurrentPlayer->GetPlayerName() : TEXT("None"));
 
-	CurrentPlayer = nullptr;
-	CurrentPhase = ETKTurnPhase::Prepare;
+	APlayerState* NextPlayer = FindNextAlivePlayer();
+
+	if (NextPlayer == nullptr || NextPlayer == CurrentPlayer)
+	{
+		// 只剩一个存活玩家或找不到下一家，游戏结束
+		CurrentPlayer = nullptr;
+		CurrentPhase = ETKTurnPhase::Prepare;
+		UE_LOG(LogTemp, Log, TEXT("Only one player alive, game over!"));
+		return;
+	}
+
+	// 切换到下一个存活玩家，开始新回合
+	StartTurn(NextPlayer);
+}
+
+APlayerState* UTKTurnComponentBase::FindNextAlivePlayer() const
+{
+	AGameStateBase* GS = Cast<AGameStateBase>(GetOwner());
+	if (GS == nullptr) return nullptr;
+
+	const TArray<TObjectPtr<APlayerState>>& Players = GS->PlayerArray;
+	if (Players.Num() == 0) return nullptr;
+
+	// 找当前玩家在 PlayerArray 中的索引
+	int32 CurrentIndex = Players.IndexOfByKey(CurrentPlayer);
+	if (CurrentIndex == INDEX_NONE)
+	{
+		// 当前玩家已不在列表中（已离开），从头找第一个存活玩家
+		for (const auto& PS : Players)
+		{
+			ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+			if (TKPS && TKPS->IsAlive())
+				return PS;
+		}
+		return nullptr;
+	}
+
+	// 从下一家开始循环查找，跳过死亡玩家
+	int32 NumPlayers = Players.Num();
+	for (int32 Offset = 1; Offset < NumPlayers; Offset++)
+	{
+		int32 NextIndex = (CurrentIndex + Offset) % NumPlayers;
+		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(Players[NextIndex]);
+		if (TKPS && TKPS->IsAlive())
+			return Players[NextIndex];
+	}
+
+	return nullptr;
 }
 
 void UTKTurnComponentBase::OnDrawPhase()

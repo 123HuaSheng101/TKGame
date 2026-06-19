@@ -84,6 +84,12 @@ protected:
 	 */
 	virtual void OnDiscardPhase();
 
+	/**
+	 * 查找当前玩家的下一个存活玩家（循环座位，跳过死亡玩家）
+	 * @return 下一个存活玩家，如果只剩自己则返回 nullptr
+	 */
+	APlayerState* FindNextAlivePlayer() const;
+
 	// ---- 复制 ----
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
