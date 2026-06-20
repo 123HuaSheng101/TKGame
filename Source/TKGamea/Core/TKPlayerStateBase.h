@@ -110,6 +110,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Player")
 	bool Heal(int32 HealAmount);
 
+	/**
+	 * 触发濒死求桃（由 ApplyDamage 自动调用，也可外部调用）
+	 * 在 ResponseComponent 中发起 Sequential 请求
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Player")
+	void TriggerDyingResponse();
+
+	/** 濒死求桃回调 */
+	void OnDyingResolved(const FResponseResult& Result);
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:

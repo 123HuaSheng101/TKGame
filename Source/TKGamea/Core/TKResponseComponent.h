@@ -20,9 +20,9 @@ DECLARE_DELEGATE_OneParam(FOnResponseResolved, const FResponseResult&);
  * 挂载在 GameState 上，管理所有待处理的响应请求
  *
  * 三种响应模式：
- *   SingleTarget — 单目标等待超时后自动结算
- *   Chain        — 无懈可击链，逆时针轮询
- *   Sequential   — AOE/濒死，逆时针逐人询问
+ *   SingleTarget — 单目标等待超时后自动结算（杀→闪）
+ *   Chain        — 无懈可击链：全服广播，有人出无懈则重新开链
+ *   Sequential   — 逐人问询：AOE/濒死，逆时针逐人超时后自动下一个
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class TKGAMEA_API UTKResponseComponent : public UActorComponent
@@ -32,64 +32,50 @@ class TKGAMEA_API UTKResponseComponent : public UActorComponent
 public:
 	UTKResponseComponent(const FObjectInitializer& Initializer);
 
-	/** 静态获取 */
 	static UTKResponseComponent* Get(const ATKGameStateBase* GameState);
 
-	// ---- 提交流程 ----
-
-	/**
-	 * 发起响应请求
-	 * @param Request   响应请求数据
-	 * @param OnResolved 结算回调（请求结束时调用）
-	 */
+	/** 发起响应请求 */
 	void RequestResponse(const FResponseRequest& Request, FOnResponseResolved OnResolved);
 
-	/**
-	 * 客户端通过 RPC 提交响应
-	 * @param Responder  响应者 PlayerState
-	 * @param ResponseCard 响应用的卡牌（杀/闪/无懈可击/桃）
-	 */
+	/** 提交响应牌 */
 	bool SubmitResponse(ATKPlayerStateBase* Responder, UTKCardBase* ResponseCard);
 
-	/** 检查是否有待处理的响应请求 */
+	/** 检查是否有待处理请求 */
 	bool IsWaitingForResponse() const;
 
-	// ---- 查询 ----
-
-	/** 获取当前活跃的响应请求 */
 	const FResponseRequest& GetActiveRequest() const { return ActiveRequest; }
 
+	/** 获取所有存活玩家（供外部构建 ResponderQueue） */
+	TArray<APlayerState*> GetAlivePlayers() const;
+
+	/** 构建逆时针响应对列（从指定玩家起，跳过被跳过者） */
+	static TArray<APlayerState*> BuildResponderQueue(const TArray<APlayerState*>& AllPlayers, APlayerState* StartFrom, APlayerState* SkipPlayer = nullptr);
+
 protected:
-	/** 超时回调（Timer 触发） */
 	void OnRequestTimeout();
-
-	/** 结算当前请求 */
+	void OnSequentialTimeout();
 	void ResolveRequest(ETKResponseResult Result, ATKPlayerStateBase* Responder = nullptr, UTKCardBase* ResponseCard = nullptr);
-
-	/** 将活跃请求广播到目标客户端 */
 	void BroadcastRequestToClients();
+	void StartNextInQueue();
+	void ProcessNextPending();
+	void StartTimeout();
 
-	/** 按座位找下一个存活玩家 */
-	static APlayerState* FindNextAliveInOrder(const TArray<APlayerState*>& PlayerArray, APlayerState* Current);
-
-protected:
-	/** 请求队列 */
+private:
 	UPROPERTY()
 	TArray<FResponseRequest> PendingRequests;
-
-	/** 对应请求队列的回调 */
 	TArray<FOnResponseResolved> PendingCallbacks;
 
-	/** 当前活跃请求 */
 	FResponseRequest ActiveRequest;
-
-	/** 活跃请求的回调 */
 	FOnResponseResolved ActiveCallback;
-
-	/** 超时句柄 */
 	FTimerHandle TimeoutHandle;
 
-	/** 响应超时时间（秒） */
 	UPROPERTY(EditAnywhere, Category = "Response")
 	float ResponseTimeout = 10.0f;
+
+	/** 无懈可击链深度（奇数次=原效果被抵消） */
+	int32 ChainDepth = 0;
+
+	/** Sequential 模式下已跳过（被响应）的玩家数 */
+	int32 SequentialPassed = 0;
 };
+

@@ -59,11 +59,17 @@ protected:
 	/** 目标合法性校验：是否可对指定目标使用 */
 	virtual bool CanUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Target) const;
 
-	/** 是否需要目标响应（杀需要目标出闪，锦囊需要无懈） */
+	/** 是否需要目标响应（杀需要闪，锦囊需要无懈） */
 	virtual bool NeedsResponse() const { return false; }
+
+	/** 获取响应类型（默认单目标，锦囊用 Chain，AOE/濒死用 Sequential） */
+	virtual ETKResponseType GetResponseType() const { return ETKResponseType::SingleTarget; }
 
 	/** 获取需要的响应牌 Tag（如 Card.Effect.Dodge） */
 	virtual FGameplayTag GetResponseRequiredTag() const { return FGameplayTag(); }
+
+	/** 构建响应对列（AOE/濒死用，子类重写） */
+	virtual void BuildResponderQueue(FResponseRequest& Req, ATKPlayerStateBase* User, ATKPlayerStateBase* Target) const {}
 
 	/** 卡牌具体效果（子类必须重写） */
 	virtual void OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Target) {}

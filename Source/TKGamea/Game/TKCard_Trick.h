@@ -9,17 +9,11 @@
 /**
  * 非延时锦囊子类
  *
- * 具体效果由 EffectTags 驱动：
- *   Card.Effect.Snatch            — 从目标手牌随机抽 1 张
- *   Card.Effect.Dismantle         — 弃置目标区域 1 张牌
- *   Card.Effect.Draw.{N}          — 摸 N 张牌
- *   Card.Effect.Negate            — 抵消一张锦囊效果
- *   Card.Effect.Duel              — 与目标决斗
- *   Card.Effect.AOE.RequireSlash  — 全体需出杀（南蛮入侵）
- *   Card.Effect.AOE.RequireDodge  — 全体需出闪（万箭齐发）
- *   Card.Effect.AOE.Heal.{N}      — 全体回 N 血（桃园结义）
- *   Card.Effect.Harvest           — 五谷丰登
- *   Card.Effect.BorrowKnife       — 借刀杀人
+ * 响应模式：
+ *   - 普通锦囊（顺手/过河/无中/决斗/借刀）→ Chain（无懈可击链）
+ *   - AOE（南蛮/万箭）→ Sequential（逐人问杀/闪）
+ *   - 桃园/五谷 → Sequential（逐人受益）
+ *   - 无懈可击 → 不触发响应（已在链中消耗）
  */
 UCLASS()
 class TKGAMEA_API UTKCard_Trick : public UTKCardBase
@@ -27,9 +21,13 @@ class TKGAMEA_API UTKCard_Trick : public UTKCardBase
 	GENERATED_BODY()
 
 public:
-	/** 此锦囊是否能被无懈可击抵消 */
 	bool CanBeNegated() const;
+	bool IsAOECard() const;
 
 protected:
+	virtual bool NeedsResponse() const override;
+	virtual ETKResponseType GetResponseType() const override;
+	virtual FGameplayTag GetResponseRequiredTag() const override;
+	virtual void BuildResponderQueue(FResponseRequest& Req, ATKPlayerStateBase* User, ATKPlayerStateBase* Target) const override;
 	virtual void OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Target) override;
 };

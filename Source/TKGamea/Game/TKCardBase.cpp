@@ -62,11 +62,17 @@ bool UTKCardBase::Use(ATKPlayerControllerBase* User, ATKPlayerStateBase* Target)
 
 		// 构建响应请求
 		FResponseRequest Req;
-		Req.Type = ETKResponseType::SingleTarget;
+		Req.Type = GetResponseType();
 		Req.RequiredTag = GetResponseRequiredTag();
 		Req.SourceCard = this;
 		Req.Initiator = User->PlayerState;
 		Req.PrimaryTarget = Target;
+
+		// Sequential 模式预先构建响应对列
+		if (Req.Type == ETKResponseType::Sequential)
+		{
+			BuildResponderQueue(Req, Cast<ATKPlayerStateBase>(User->PlayerState), Target);
+		}
 
 		// 发起异步请求，绑定回调
 		ResponseComp->RequestResponse(Req, FOnResponseResolved::CreateUObject(this, &UTKCardBase::ContinueUseAfterResponse));

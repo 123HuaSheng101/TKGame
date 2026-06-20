@@ -1,6 +1,4 @@
 ﻿#include "TKGamea.h"
-// TKResponseComponent.cpp
-
 #include "TKResponseComponent.h"
 #include "TKGameStateBase.h"
 #include "TKPlayerStateBase.h"
@@ -10,6 +8,12 @@
 #include "Game/TKCard_Basic.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+
+static FGameplayTag Tag_Card_Negate = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Negate"), false);
+static FGameplayTag Tag_Card_Peach  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false);
+static FGameplayTag Tag_Card_Wine   = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"), false);
+static FGameplayTag Tag_Card_Slash  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Slash"), false);
+static FGameplayTag Tag_Card_Dodge  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"), false);
 
 UTKResponseComponent::UTKResponseComponent(const FObjectInitializer& Initializer)
 	: Super(Initializer)
@@ -23,144 +27,266 @@ UTKResponseComponent* UTKResponseComponent::Get(const ATKGameStateBase* GameStat
 	return GameState->ResponseComponent.Get();
 }
 
+TArray<APlayerState*> UTKResponseComponent::GetAlivePlayers() const
+{
+	TArray<APlayerState*> Result;
+	ATKGameStateBase* GS = Cast<ATKGameStateBase>(GetOwner());
+	if (!GS) return Result;
+
+	for (const TObjectPtr<APlayerState>& PS : GS->PlayerArray)
+	{
+		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+		if (TKPS && TKPS->IsAlive())
+			Result.Add(PS);
+	}
+	return Result;
+}
+
+TArray<APlayerState*> UTKResponseComponent::BuildResponderQueue(const TArray<APlayerState*>& AllPlayers, APlayerState* StartFrom, APlayerState* SkipPlayer)
+{
+	TArray<APlayerState*> Queue;
+	int32 StartIdx = AllPlayers.IndexOfByKey(StartFrom);
+	if (StartIdx == INDEX_NONE) StartIdx = 0;
+
+	int32 N = AllPlayers.Num();
+	for (int32 i = 1; i <= N; i++)
+	{
+		int32 Idx = (StartIdx + i) % N;
+		APlayerState* PS = AllPlayers[Idx];
+		if (PS == SkipPlayer) continue;
+		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+		if (TKPS && TKPS->IsAlive())
+			Queue.Add(PS);
+	}
+	return Queue;
+}
+
+// ===== 工具 =====
+
+void UTKResponseComponent::StartTimeout()
+{
+	UWorld* World = GetWorld();
+	if (World)
+	{
+		World->GetTimerManager().SetTimer(TimeoutHandle, this, &UTKResponseComponent::OnRequestTimeout, ResponseTimeout, false);
+	}
+}
+
+bool UTKResponseComponent::IsWaitingForResponse() const
+{
+	return ActiveRequest.Result == ETKResponseResult::Pending;
+}
+
+void UTKResponseComponent::ProcessNextPending()
+{
+	if (PendingRequests.Num() == 0 || PendingCallbacks.Num() == 0) return;
+
+	ActiveRequest = PendingRequests[0];
+	ActiveCallback = PendingCallbacks[0];
+	PendingRequests.RemoveAt(0);
+	PendingCallbacks.RemoveAt(0);
+	ChainDepth = 0;
+	SequentialPassed = 0;
+
+	BroadcastRequestToClients();
+
+	if (ActiveRequest.Type == ETKResponseType::Sequential)
+		StartNextInQueue();
+	else
+		StartTimeout();
+}
+
+// ===== 发起请求 =====
+
 void UTKResponseComponent::RequestResponse(const FResponseRequest& Request, FOnResponseResolved OnResolved)
 {
-	// 入队列
-	PendingRequests.Add(Request);
-
-	// 如果当前没有活跃请求，取出第一个处理
-	if (ActiveRequest.Result == ETKResponseResult::Pending && PendingRequests.Num() > 0)
+	// 当前有活跃请求 → 入队等待
+	if (ActiveRequest.IsPending())
 	{
-		ActiveRequest = PendingRequests[0];
-		PendingRequests.RemoveAt(0);
-		ActiveCallback = OnResolved;
-	}
-	else if (ActiveRequest.Result != ETKResponseResult::Pending)
-	{
-		// 当前无活跃请求，直接处理
-		if (PendingRequests.Num() > 0)
-		{
-			ActiveRequest = PendingRequests[0];
-			PendingRequests.RemoveAt(0);
-			ActiveCallback = OnResolved;
-		}
-	}
-	else
-	{
-		// 已有活跃请求，等结束后再处理
+		PendingRequests.Add(Request);
 		PendingCallbacks.Add(OnResolved);
 		return;
 	}
 
-	// 广播到客户端
-	BroadcastRequestToClients();
+	ActiveRequest = Request;
+	ActiveCallback = OnResolved;
+	ChainDepth = 0;
+	SequentialPassed = 0;
 
-	// 单目标/链式响应：启动超时定时器
-	if (ActiveRequest.Type == ETKResponseType::SingleTarget ||
-		ActiveRequest.Type == ETKResponseType::Chain)
+	// Sequential 模式：初始化队列
+	if (ActiveRequest.Type == ETKResponseType::Sequential && ActiveRequest.ResponderQueue.Num() == 0)
 	{
-		UWorld* World = GetWorld();
-		if (World)
+		ActiveRequest.ResponderQueue = GetAlivePlayers();
+		if (ActiveRequest.Initiator)
 		{
-			World->GetTimerManager().SetTimer(TimeoutHandle, this, &UTKResponseComponent::OnRequestTimeout, ResponseTimeout, false);
+			ActiveRequest.ResponderQueue.Remove(ActiveRequest.Initiator);
 		}
+		ActiveRequest.CurrentResponderIndex = 0;
 	}
 
-	UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: RequestResponse type=%d, target=[%s]"),
-		(uint8)ActiveRequest.Type,
-		ActiveRequest.PrimaryTarget ? *ActiveRequest.PrimaryTarget->GetPlayerName() : TEXT("None"));
+	BroadcastRequestToClients();
+
+	if (ActiveRequest.Type == ETKResponseType::Sequential)
+	{
+		StartNextInQueue();
+	}
+	else
+	{
+		StartTimeout();
+	}
+
+	UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: RequestResponse type=%d tag=[%s]"),
+		(uint8)ActiveRequest.Type, *ActiveRequest.RequiredTag.GetTagName().ToString());
 }
+
+// ===== 广播 =====
 
 void UTKResponseComponent::BroadcastRequestToClients()
 {
-	// 构建事件
 	FEventContext Ctx;
 	Ctx.EventTag = FGameplayTag::RequestGameplayTag(TEXT("Card.Response.Request"), false);
 
-	// 发起者
 	if (ActiveRequest.Initiator)
 	{
 		APlayerController* PC = ActiveRequest.Initiator->GetPlayerController();
 		Ctx.EventInitiator = Cast<ATKPlayerControllerBase>(PC);
 	}
 
-	// 需要响应的玩家
-	if (ActiveRequest.PrimaryTarget)
+	// Chain 模式：广播给所有存活玩家
+	if (ActiveRequest.Type == ETKResponseType::Chain)
+	{
+		TArray<APlayerState*> Alive = GetAlivePlayers();
+		for (APlayerState* PS : Alive)
+		{
+			APlayerController* PC = PS->GetPlayerController();
+			if (ATKPlayerControllerBase* TKPC = Cast<ATKPlayerControllerBase>(PC))
+				Ctx.Targets.Add(TKPC);
+		}
+	}
+	// Sequential / SingleTarget：只通知当前等待者
+	else if (ActiveRequest.PrimaryTarget)
 	{
 		APlayerController* PC = ActiveRequest.PrimaryTarget->GetPlayerController();
 		if (ATKPlayerControllerBase* TKPC = Cast<ATKPlayerControllerBase>(PC))
-		{
 			Ctx.Targets.Add(TKPC);
-		}
 	}
 
-	// 写入响应 Tag
 	Ctx.Params_g.Add(ActiveRequest.RequiredTag);
 
-	// 通过发起者的 EventComponent 广播
 	if (Ctx.EventInitiator)
 	{
 		UTKEventComponentBase* EventComp = Ctx.EventInitiator->GetEventComponent();
-		if (EventComp)
+		if (EventComp) EventComp->PostEvent(Ctx);
+	}
+
+	UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: Broadcast type=%d tag=[%s] targets=%d"),
+		(uint8)ActiveRequest.Type, *ActiveRequest.RequiredTag.GetTagName().ToString(), Ctx.Targets.Num());
+}
+
+// ===== Sequential 逐人推进 =====
+
+void UTKResponseComponent::StartNextInQueue()
+{
+	const TArray<TObjectPtr<APlayerState>>& Queue = ActiveRequest.ResponderQueue;
+	// 跳过已响应或已死亡的玩家
+	while (ActiveRequest.CurrentResponderIndex < Queue.Num())
+	{
+		APlayerState* Next = Queue[ActiveRequest.CurrentResponderIndex];
+		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(Next);
+		if (TKPS && TKPS->IsAlive())
 		{
-			EventComp->PostEvent(Ctx);
+			ActiveRequest.PrimaryTarget = Next;
+			BroadcastRequestToClients();
+			StartTimeout();
+			UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: Sequential → asking [%s] (index=%d/%d)"),
+				*Next->GetPlayerName(), ActiveRequest.CurrentResponderIndex, Queue.Num());
+			return;
+		}
+		ActiveRequest.CurrentResponderIndex++;
+	}
+
+	// 队列遍历完毕
+	ResolveRequest(ETKResponseResult::AllPassed);
+}
+
+void UTKResponseComponent::OnSequentialTimeout()
+{
+	// AOE 响应超时：当前玩家未出杀/闪 → 扣1血
+	if (ActiveRequest.RequiredTag != Tag_Card_Peach)
+	{
+		ATKPlayerStateBase* CurrentTarget = Cast<ATKPlayerStateBase>(ActiveRequest.PrimaryTarget);
+		if (CurrentTarget && CurrentTarget->IsAlive())
+		{
+			CurrentTarget->ApplyDamage(1);
+			UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: AOE timeout → [%s] takes 1 damage"),
+				*CurrentTarget->GetPlayerName());
 		}
 	}
 
-	UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: Broadcast response request to clients"));
+	ActiveRequest.CurrentResponderIndex++;
+	StartNextInQueue();
 }
+
+// ===== 提交响应 =====
 
 bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCardBase* ResponseCard)
 {
 	if (!Responder || !ResponseCard) return false;
 	if (!ActiveRequest.IsPending()) return false;
 
-	// 校验：响应卡牌 Tag 是否匹配
 	const FGameplayTag& FirstTag = ResponseCard->EffectTags.Num() > 0 ? ResponseCard->EffectTags[0] : FGameplayTag();
-	if (FirstTag != ActiveRequest.RequiredTag)
+
+	// 濒死时酒也可用（RequiredTag 是 Peach 时允许 Wine）
+	bool bTagMatch = (FirstTag == ActiveRequest.RequiredTag);
+	if (!bTagMatch && ActiveRequest.RequiredTag == Tag_Card_Peach && FirstTag == Tag_Card_Wine)
 	{
-		UE_LOG(LogTKGame, Warning, TEXT("ResponseComponent: Response card tag mismatch. Expected [%s], got [%s]"),
+		bTagMatch = true; // 酒可代桃救人
+	}
+
+	if (!bTagMatch)
+	{
+		UE_LOG(LogTKGame, Warning, TEXT("ResponseComponent: Tag mismatch. Expected [%s], got [%s]"),
 			*ActiveRequest.RequiredTag.GetTagName().ToString(), *FirstTag.GetTagName().ToString());
 		return false;
 	}
 
-	// 记录响应
 	ActiveRequest.AlreadyResponded.Add(Responder);
-
-	UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: [%s] responded with card [%s]"),
+	UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: [%s] responded with [%s]"),
 		*Responder->GetPlayerName(), *ResponseCard->CardDefId.ToString());
 
-	// 根据响应类型结算
 	switch (ActiveRequest.Type)
 	{
 	case ETKResponseType::SingleTarget:
-		// 单目标响应：有人出了响应牌 → 结算为 Responded（伤害抵消）
 		ResolveRequest(ETKResponseResult::Responded, Responder, ResponseCard);
 		break;
 
 	case ETKResponseType::Chain:
-		// 链式响应：有人出无懈 → 重新开一轮无懈窗口
-		// TODO: 逆时针重新询问
-		ResolveRequest(ETKResponseResult::Responded, Responder, ResponseCard);
+	{
+		// 无懈可击链：有人出无懈 → 链深度+1 → 重新开链（无懈可以无懈无懈）
+		ChainDepth++;
+		UWorld* World = GetWorld();
+		if (World) World->GetTimerManager().ClearTimer(TimeoutHandle);
+
+		UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: Chain depth=%d, restarting chain..."), ChainDepth);
+		BroadcastRequestToClients();
+		StartTimeout();
 		break;
+	}
 
 	case ETKResponseType::Sequential:
-		// 逐人响应：检查是否所有人都问了
-		ActiveRequest.CurrentResponderIndex++;
-		if (ActiveRequest.CurrentResponderIndex >= ActiveRequest.ResponderQueue.Num())
+		// Sequential：判断是濒死求桃还是 AOE
+		//   濒死(Peach)：有人出桃→立即结算
+		//   AOE(Slash/Dodge)：当前玩家安全→推进下一个
+		if (ActiveRequest.RequiredTag == Tag_Card_Peach)
 		{
-			ResolveRequest(ETKResponseResult::AllPassed);
+			ResolveRequest(ETKResponseResult::Responded, Responder, ResponseCard);
 		}
 		else
 		{
-			// 继续问下一个
-			BroadcastRequestToClients();
+			SequentialPassed++;
+			ActiveRequest.CurrentResponderIndex++;
+			StartNextInQueue();
 		}
-		break;
-
-	case ETKResponseType::Duel:
-		// 决斗：双方轮流
-		// TODO: 交换攻击方，重新开窗口
 		break;
 
 	default:
@@ -170,80 +296,54 @@ bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCard
 	return true;
 }
 
+// ===== 超时 =====
+
 void UTKResponseComponent::OnRequestTimeout()
 {
-	UE_LOG(LogTKGame, Warning, TEXT("ResponseComponent: Request timeout, no one responded"));
-	ResolveRequest(ETKResponseResult::Timeout);
+	switch (ActiveRequest.Type)
+	{
+	case ETKResponseType::Chain:
+		// 无懈链超时：链深度为奇数则原效果被抵消
+	{
+		bool bNegated = (ChainDepth % 2 == 1);
+		UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: Chain timeout, depth=%d, bNegated=%d"), ChainDepth, bNegated ? 1 : 0);
+		ResolveRequest(bNegated ? ETKResponseResult::Responded : ETKResponseResult::Timeout);
+		break;
+	}
+	case ETKResponseType::Sequential:
+		OnSequentialTimeout();
+		break;
+	default:
+		UE_LOG(LogTKGame, Warning, TEXT("ResponseComponent: Request timeout"));
+		ResolveRequest(ETKResponseResult::Timeout);
+		break;
+	}
 }
+
+// ===== 结算 =====
 
 void UTKResponseComponent::ResolveRequest(ETKResponseResult Result, ATKPlayerStateBase* Responder, UTKCardBase* ResponseCard)
 {
-	// 清理定时器
 	UWorld* World = GetWorld();
-	if (World)
-	{
-		World->GetTimerManager().ClearTimer(TimeoutHandle);
-	}
+	if (World) World->GetTimerManager().ClearTimer(TimeoutHandle);
 
 	ActiveRequest.Result = Result;
 
-	// 构建回调结果
 	FResponseResult ResolveResult;
 	ResolveResult.Result = Result;
 	ResolveResult.Responder = Responder;
 	ResolveResult.ResponseCard = ResponseCard;
 	ResolveResult.bNegated = (Result == ETKResponseResult::Responded);
 
-	// 执行回调
 	if (ActiveCallback.IsBound())
 	{
 		ActiveCallback.Execute(ResolveResult);
 	}
 	ActiveCallback.Unbind();
 
-	// 重置活跃请求
 	ActiveRequest = FResponseRequest();
+	ChainDepth = 0;
+	SequentialPassed = 0;
 
-	// 处理下一个等待中的请求
-	if (PendingRequests.Num() > 0 && PendingCallbacks.Num() > 0)
-	{
-		ActiveRequest = PendingRequests[0];
-		ActiveCallback = PendingCallbacks[0];
-		PendingRequests.RemoveAt(0);
-		PendingCallbacks.RemoveAt(0);
-
-		BroadcastRequestToClients();
-
-		if (ActiveRequest.Type == ETKResponseType::SingleTarget ||
-			ActiveRequest.Type == ETKResponseType::Chain)
-		{
-			if (World)
-			{
-				World->GetTimerManager().SetTimer(TimeoutHandle, this, &UTKResponseComponent::OnRequestTimeout, ResponseTimeout, false);
-			}
-		}
-	}
-}
-
-bool UTKResponseComponent::IsWaitingForResponse() const
-{
-	return ActiveRequest.Result == ETKResponseResult::Pending;
-}
-
-APlayerState* UTKResponseComponent::FindNextAliveInOrder(const TArray<APlayerState*>& PlayerArray, APlayerState* Current)
-{
-	if (PlayerArray.Num() == 0) return nullptr;
-
-	int32 CurrentIndex = PlayerArray.IndexOfByKey(Current);
-	int32 NumPlayers = PlayerArray.Num();
-	int32 StartIndex = (CurrentIndex == INDEX_NONE) ? 0 : CurrentIndex;
-
-	for (int32 Offset = 1; Offset <= NumPlayers; Offset++)
-	{
-		int32 NextIndex = (StartIndex + Offset) % NumPlayers;
-		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PlayerArray[NextIndex]);
-		if (TKPS && TKPS->IsAlive())
-			return PlayerArray[NextIndex];
-	}
-	return nullptr;
+	ProcessNextPending();
 }

@@ -4,7 +4,9 @@
 #include "TKCard_Trick.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
+#include "Core/TKResponseComponent.h"
 #include "Cards/TKCardZoneComponent.h"
+#include "GameFramework/GameStateBase.h"
 
 // ---- 效果标签 ----
 static FGameplayTag Tag_Card_Snatch          = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Snatch"),          false);
@@ -20,6 +22,57 @@ static FGameplayTag Tag_Card_BorrowKnife     = FGameplayTag::RequestGameplayTag(
 // 摸牌效果使用 Tag 搜索匹配
 static FName TagPrefix_Draw = TEXT("Card.Effect.Draw");
 
+// ===== 响应系统 =====
+
+bool UTKCard_Trick::NeedsResponse() const
+{
+	if (!CanBeNegated()) return false; // 无懈可击自身不触发响应
+	return true;
+}
+
+bool UTKCard_Trick::IsAOECard() const
+{
+	const FGameplayTag& FirstTag = EffectTags.Num() > 0 ? EffectTags[0] : FGameplayTag();
+	return FirstTag.MatchesTag(Tag_Card_AOE_RequireSlash) ||
+		   FirstTag.MatchesTag(Tag_Card_AOE_RequireDodge) ||
+		   FirstTag.MatchesTag(Tag_Card_AOE_Heal_1) ||
+		   FirstTag.MatchesTag(Tag_Card_Harvest);
+}
+
+ETKResponseType UTKCard_Trick::GetResponseType() const
+{
+	return IsAOECard() ? ETKResponseType::Sequential : ETKResponseType::Chain;
+}
+
+FGameplayTag UTKCard_Trick::GetResponseRequiredTag() const
+{
+	// 无懈可击链用的都是 Negate Tag
+	return Tag_Card_Negate;
+}
+
+void UTKCard_Trick::BuildResponderQueue(FResponseRequest& Req, ATKPlayerStateBase* User, ATKPlayerStateBase* Target) const
+{
+	// 只对 Sequential 类型的 AOE 构建队列
+	if (!IsAOECard() || !User) return;
+
+	const FGameplayTag& FirstTag = EffectTags.Num() > 0 ? EffectTags[0] : FGameplayTag();
+
+	// AOE 需要玩家出的牌类型
+	if (FirstTag.MatchesTag(Tag_Card_AOE_RequireSlash))
+		Req.RequiredTag = Tag_Card_AOE_RequireSlash;
+	else if (FirstTag.MatchesTag(Tag_Card_AOE_RequireDodge))
+		Req.RequiredTag = Tag_Card_AOE_RequireDodge;
+	else
+		Req.RequiredTag = FGameplayTag();
+
+	// 从 User 逆时针构建响应对列（跳过 User 自己）
+	Req.ResponderQueue = UTKResponseComponent::BuildResponderQueue(
+		User->GetWorld()->GetGameState<AGameStateBase>()->PlayerArray,
+		User,
+		User);
+}
+
+// ===== CanBeNegated =====
 bool UTKCard_Trick::CanBeNegated() const
 {
 	// 无懈可击本身不能被无懈抵消（无懈可击的 EffectTag 是 Card.Effect.Negate）
