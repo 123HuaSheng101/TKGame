@@ -1,3 +1,4 @@
+﻿#include "TKGamea.h"
 #include "TKIdentityRuleComponent.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKGameModeBase.h"
@@ -75,7 +76,7 @@ void UTKIdentityRuleComponent::AssignIdentities(const TArray<APlayerState*>& Pla
 	int32 TotalPlayers = Players.Num();
 	if (TotalPlayers < 4 || TotalPlayers > 10) return;
 
-	UE_LOG(LogTemp, Log, TEXT("=== Assigning Identities for %d players ==="), TotalPlayers);
+	UE_LOG(LogTKGame, Log, TEXT("=== Assigning Identities for %d players ==="), TotalPlayers);
 
 	// 先分配主公（第一个玩家）
 	for (int32 i = 0; i < TotalPlayers; i++)
@@ -86,7 +87,7 @@ void UTKIdentityRuleComponent::AssignIdentities(const TArray<APlayerState*>& Pla
 		ETKIdentity Identity = DetermineIdentityForPlayer(i, TotalPlayers);
 		TKPlayer->SetIdentity(Identity);
 
-		UE_LOG(LogTemp, Log, TEXT("  Player [%s] -> Seat %d -> Identity: %d"),
+		UE_LOG(LogTKGame, Log, TEXT("  Player [%s] -> Seat %d -> Identity: %d"),
 			*TKPlayer->GetPlayerName(), i, (uint8)Identity);
 	}
 }
@@ -138,7 +139,7 @@ void UTKIdentityRuleComponent::ResolveDeath(ATKPlayerStateBase* DeadPlayer)
 {
 	if (DeadPlayer == nullptr || DeadPlayer->IsAlive()) return;
 
-	UE_LOG(LogTemp, Log, TEXT("Player [%s] died, resolving..."), *DeadPlayer->GetPlayerName());
+	UE_LOG(LogTKGame, Log, TEXT("Player [%s] died, resolving..."), *DeadPlayer->GetPlayerName());
 
 	// 清空所有牌区
 	UTKCardZoneComponent* CardZone = DeadPlayer->FindComponentByClass<UTKCardZoneComponent>();

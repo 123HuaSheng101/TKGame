@@ -1,3 +1,4 @@
+﻿#include "TKGamea.h"
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "TKTurnComponentBase.h"
@@ -43,14 +44,14 @@ void UTKTurnComponentBase::StartTurn(APlayerState* Player)
 	SlashUsedThisPhase = 0;
 	CurrentPhase = ETKTurnPhase::Prepare;
 
-	UE_LOG(LogTemp, Log, TEXT("=== Turn %d Start: Player [%s] ==="), CurrentTurnNumber, *Player->GetPlayerName());
+	UE_LOG(LogTKGame, Log, TEXT("=== Turn %d Start: Player [%s] ==="), CurrentTurnNumber, *Player->GetPlayerName());
 	EnterPhase(ETKTurnPhase::Prepare);
 }
 
 void UTKTurnComponentBase::EnterPhase(ETKTurnPhase NewPhase)
 {
 	CurrentPhase = NewPhase;
-	UE_LOG(LogTemp, Log, TEXT("  Enter Phase: %d"), (uint8)CurrentPhase);
+	UE_LOG(LogTKGame, Log, TEXT("  Enter Phase: %d"), (uint8)CurrentPhase);
 
 	switch (CurrentPhase)
 	{
@@ -71,9 +72,9 @@ void UTKTurnComponentBase::EnterPhase(ETKTurnPhase NewPhase)
 
 	case ETKTurnPhase::Play:
 		// 出牌阶段：重置杀计数，等待玩家操作
+		// 玩家通过 ServerAdvancePhase 主动结束出牌阶段
 		SlashUsedThisPhase = 0;
-		// M1 第一阶段没有出牌逻辑，直接推进
-		AdvancePhase();
+		UE_LOG(LogTKGame, Log, TEXT("  Play Phase: waiting for player actions..."));
 		break;
 
 	case ETKTurnPhase::Discard:
@@ -103,7 +104,7 @@ void UTKTurnComponentBase::AdvancePhase()
 
 void UTKTurnComponentBase::EndTurn()
 {
-	UE_LOG(LogTemp, Log, TEXT("=== Turn %d End: Player [%s] ==="), CurrentTurnNumber,
+	UE_LOG(LogTKGame, Log, TEXT("=== Turn %d End: Player [%s] ==="), CurrentTurnNumber,
 		CurrentPlayer ? *CurrentPlayer->GetPlayerName() : TEXT("None"));
 
 	APlayerState* NextPlayer = FindNextAlivePlayer();
@@ -113,7 +114,7 @@ void UTKTurnComponentBase::EndTurn()
 		// 只剩一个存活玩家或找不到下一家，游戏结束
 		CurrentPlayer = nullptr;
 		CurrentPhase = ETKTurnPhase::Prepare;
-		UE_LOG(LogTemp, Log, TEXT("Only one player alive, game over!"));
+		UE_LOG(LogTKGame, Log, TEXT("Only one player alive, game over!"));
 		return;
 	}
 
@@ -160,7 +161,7 @@ void UTKTurnComponentBase::OnDrawPhase()
 {
 	// 默认摸牌逻辑：摸 2 张
 	// 具体摸牌由 GameMode 的规则组件完成，这里仅输出日志
-	UE_LOG(LogTemp, Log, TEXT("  Draw Phase: default draw 2 cards"));
+	UE_LOG(LogTKGame, Log, TEXT("  Draw Phase: default draw 2 cards"));
 	AdvancePhase();
 }
 
@@ -168,6 +169,6 @@ void UTKTurnComponentBase::OnDiscardPhase()
 {
 	// 默认弃牌逻辑：检查手牌数是否超过体力
 	// 具体弃牌由 GameMode 的规则组件完成，这里仅输出日志
-	UE_LOG(LogTemp, Log, TEXT("  Discard Phase: discard down to health limit"));
+	UE_LOG(LogTKGame, Log, TEXT("  Discard Phase: discard down to health limit"));
 	AdvancePhase();
 }

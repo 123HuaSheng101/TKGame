@@ -8,10 +8,11 @@
 #include "TKGameStateBase.generated.h"
 
 class UTKTurnComponentBase;
+class UTKResponseComponent;
 
 /**
  * 游戏状态基类
- * 持有回合组件引用，管理游戏结果等全局复制状态
+ * 持有回合组件、响应组件，管理游戏结果等全局复制状态
  */
 UCLASS()
 class TKGAMEA_API ATKGameStateBase : public AGameState
@@ -23,6 +24,10 @@ public:
 	/** 获取回合组件 */
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
 	UTKTurnComponentBase* GetTurnComponent() const { return TurnComponent; }
+
+	/** 获取响应组件 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Response")
+	UTKResponseComponent* GetResponseComponent() const { return ResponseComponent; }
 
 	/** 游戏结果（复制到所有客户端，触发 OnRep 响应） */
 	UPROPERTY(ReplicatedUsing = OnRep_GameResult, BlueprintReadOnly, Category = "Game")
@@ -36,7 +41,12 @@ public:
 
 private:
 	friend class UTKTurnComponentBase;
+	friend class UTKResponseComponent;
 	/** 回合阶段状态机组件 */
 	UPROPERTY()
 	TObjectPtr<UTKTurnComponentBase> TurnComponent;
+
+	/** 响应系统核心管理器 */
+	UPROPERTY()
+	TObjectPtr<UTKResponseComponent> ResponseComponent;
 };

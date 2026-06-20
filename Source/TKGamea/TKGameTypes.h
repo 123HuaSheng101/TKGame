@@ -83,6 +83,27 @@ enum class ETKCardType : uint8
     DelayedTrick	// 延时锦囊
 };
 
+/** 响应类型 */
+UENUM(BlueprintType)
+enum class ETKResponseType : uint8
+{
+    None,           // 不需要响应（直接结算）
+    SingleTarget,   // 单目标响应（杀→闪）
+    Chain,          // 链式响应（无懈可击链）
+    Sequential,     // 逐人响应（AOE群伤/濒死求桃）
+    Duel            // 决斗（双方轮流）
+};
+
+/** 响应结果 */
+UENUM(BlueprintType)
+enum class ETKResponseResult : uint8
+{
+    Pending,        // 等待响应中
+    Responded,      // 有人响应（伤害抵消/锦囊被无懈）
+    Timeout,        // 超时无人响应（效果生效）
+    AllPassed       // 所有人跳过（AOE全部出杀/闪）
+};
+
 // ============================================================
 // 核心结构体
 // ============================================================
@@ -217,4 +238,83 @@ public:
     /** 额外对象参数 */
     UPROPERTY(BlueprintReadOnly)
     TArray<TObjectPtr<UObject>> Params_O;
+};
+
+// ============================================================
+// 响应系统
+// ============================================================
+
+class UTKCardBase;
+class ATKPlayerStateBase;
+
+/**
+ * 响应请求
+ * 由发起卡牌创建，ResponseComponent 管理生命周期，分发到目标客户端等待响应
+ */
+USTRUCT()
+struct FResponseRequest
+{
+    GENERATED_BODY()
+
+    /** 响应类型 */
+    UPROPERTY()
+    ETKResponseType Type = ETKResponseType::None;
+
+    /** 请求 Tag（需要什么响应牌，如 Card.Effect.Dodge） */
+    UPROPERTY()
+    FGameplayTag RequiredTag;
+
+    /** 发起此响应的来源卡牌 */
+    UPROPERTY()
+    TObjectPtr<UTKCardBase> SourceCard;
+
+    /** 发起者 PlayerState */
+    UPROPERTY()
+    TObjectPtr<APlayerState> Initiator;
+
+    /** 主目标（杀→闪的目标，无懈可击的来源） */
+    UPROPERTY()
+    TObjectPtr<APlayerState> PrimaryTarget;
+
+    /** 需要依次响应的玩家列表（AOE/濒死用） */
+    UPROPERTY()
+    TArray<TObjectPtr<APlayerState>> ResponderQueue;
+
+    /** 当前等待响应的玩家索引（Sequential 用） */
+    UPROPERTY()
+    int32 CurrentResponderIndex = 0;
+
+    /** 已响应的玩家列表（打出了响应牌） */
+    UPROPERTY()
+    TArray<TObjectPtr<APlayerState>> AlreadyResponded;
+
+    /** 当前结果 */
+    UPROPERTY()
+    ETKResponseResult Result = ETKResponseResult::Pending;
+
+    bool IsPending() const { return Result == ETKResponseResult::Pending; }
+};
+
+/**
+ * 响应结果回调数据
+ */
+USTRUCT()
+struct FResponseResult
+{
+    GENERATED_BODY()
+
+    /** 最终结果 */
+    UPROPERTY()
+    ETKResponseResult Result = ETKResponseResult::Timeout;
+
+    /** 响应者（谁出了响应牌），Timeout 时为空 */
+    UPROPERTY()
+    TObjectPtr<APlayerState> Responder;
+
+    /** 响应用的那张卡牌 */
+    UPROPERTY()
+    TObjectPtr<UTKCardBase> ResponseCard;
+
+    /** 是否被抵消了（无懈/闪生效 = true；AOE 有人未出 = false） */
+    bool bNegated = false;
 };

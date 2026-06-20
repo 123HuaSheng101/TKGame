@@ -43,6 +43,28 @@ public:
 	UFUNCTION(Exec)
 	void AdvancePhase();
 
+	// ---- 卡牌测试命令 ----
+
+	/** 查看当前玩家手牌列表 */
+	UFUNCTION(Exec)
+	void ShowHand();
+
+	/** 对指定玩家使用手牌中的第N张卡（从0开始） */
+	UFUNCTION(Exec)
+	void UseCard(int32 CardIndex, int32 TargetPlayerIndex = -1);
+
+	/** 响应当前请求：使用手牌中第N张卡作为响应牌 */
+	UFUNCTION(Exec)
+	void RespondCard(int32 CardIndex);
+
+	/** 查看当前响应组件状态 */
+	UFUNCTION(Exec)
+	void ShowResponseStatus();
+
+	/** 打印当前所有玩家的状态信息 */
+	UFUNCTION(Exec)
+	void ShowPlayerStatus();
+
 protected:
 	/** 确保调试 HUD 已创建并显示 */
 	void EnsureDebugHud();

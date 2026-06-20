@@ -1,3 +1,4 @@
+﻿#include "TKGamea.h"
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
@@ -23,7 +24,7 @@ UTKEventComponentBase* UTKEventComponentBase::Get(const ATKPlayerControllerBase*
 		UTKEventComponentBase* EventComponent = Cast<UTKEventComponentBase>(PlayerController->GetComponentByClass(UTKEventComponentBase::StaticClass()));
 		if (EventComponent == nullptr)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("UTKEventComponentBase::Get - EventComponent not found on PlayerController"));
+			UE_LOG(LogTKGame, Warning, TEXT("UTKEventComponentBase::Get - EventComponent not found on PlayerController"));
 			return nullptr;
 		}
 		return EventComponent;

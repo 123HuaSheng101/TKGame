@@ -37,6 +37,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "CardZone")
 	int32 GetHandCardCount() const { return HandCards.Num(); }
 
+	/** 获取装备区所有卡牌 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "CardZone")
+	TArray<UTKCardBase*> GetEquipmentCards() const { return EquipmentCards; }
+
+	/** 获取判定区所有卡牌 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "CardZone")
+	TArray<UTKCardBase*> GetJudgementCards() const { return JudgementCards; }
+
 	/** 添加一张卡牌到装备区 */
 	UFUNCTION(BlueprintCallable, Category = "CardZone")
 	void AddToEquipment(UTKCardBase* Card);
@@ -44,6 +52,14 @@ public:
 	/** 添加一张卡牌到判定区 */
 	UFUNCTION(BlueprintCallable, Category = "CardZone")
 	void AddToJudgement(UTKCardBase* Card);
+
+	/** 从装备区移除一张卡牌 */
+	UFUNCTION(BlueprintCallable, Category = "CardZone")
+	bool RemoveFromEquipment(UTKCardBase* Card);
+
+	/** 从判定区移除一张卡牌 */
+	UFUNCTION(BlueprintCallable, Category = "CardZone")
+	bool RemoveFromJudgement(UTKCardBase* Card);
 
 	/**
 	 * 清空所有牌区

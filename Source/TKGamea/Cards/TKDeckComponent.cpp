@@ -1,5 +1,10 @@
+﻿#include "TKGamea.h"
 #include "TKDeckComponent.h"
 #include "Game/TKCardBase.h"
+#include "Game/TKCard_Basic.h"
+#include "Game/TKCard_Trick.h"
+#include "Game/TKCard_DelayedTrick.h"
+#include "Game/TKCard_Equipment.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
 
@@ -19,14 +24,28 @@ void UTKDeckComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 UTKCardBase* UTKDeckComponent::CreateCardInstance(const FTKDebugCardEntry& Entry)
 {
-	UTKCardBase* Card = NewObject<UTKCardBase>(GetWorld() ? GetWorld()->GetOuter() : GetOuter());
+	// 根据 ETKCardType 选择对应子类
+	TSubclassOf<UTKCardBase> CardClass;
+	switch (Entry.CardType)
+	{
+	case ETKCardType::Basic:         CardClass = UTKCard_Basic::StaticClass();         break;
+	case ETKCardType::Trick:         CardClass = UTKCard_Trick::StaticClass();          break;
+	case ETKCardType::DelayedTrick:  CardClass = UTKCard_DelayedTrick::StaticClass();  break;
+	case ETKCardType::Equipment:     CardClass = UTKCard_Equipment::StaticClass();      break;
+	default:                         CardClass = UTKCard_Basic::StaticClass();          break;
+	}
+
+	UTKCardBase* Card = NewObject<UTKCardBase>(this, CardClass);
 	if (Card)
 	{
-		Card->CardDefId = Entry.CardDefId;
-		Card->CardType = Entry.CardType;
-		Card->Suit = Entry.Suit;
-		Card->Rank = Entry.Rank;
-		Card->ZoneType = ETKCardZone::Deck;
+		Card->CardDefId  = Entry.CardDefId;
+		Card->CardName   = Entry.CardName;
+		Card->CardType   = Entry.CardType;
+		Card->Suit       = Entry.Suit;
+		Card->Rank       = Entry.Rank;
+		Card->ZoneType   = ETKCardZone::Deck;
+		Card->EffectTags = Entry.EffectTags;
+
 		NextInstanceId++;
 	}
 	return Card;
@@ -51,7 +70,7 @@ void UTKDeckComponent::InitDebugDeck(const TArray<FTKDebugCardEntry>& DebugCards
 	}
 
 	Shuffle();
-	UE_LOG(LogTemp, Log, TEXT("Deck initialized with %d cards, shuffled"), DeckCards.Num());
+	UE_LOG(LogTKGame, Log, TEXT("Deck initialized with %d cards, shuffled"), DeckCards.Num());
 }
 
 void UTKDeckComponent::Shuffle()
@@ -78,11 +97,11 @@ UTKCardBase* UTKDeckComponent::DrawCard()
 			DeckCards = DiscardPile;
 			DiscardPile.Empty();
 			Shuffle();
-			UE_LOG(LogTemp, Log, TEXT("Deck reshuffled from discard pile, %d cards"), DeckCards.Num());
+			UE_LOG(LogTKGame, Log, TEXT("Deck reshuffled from discard pile, %d cards"), DeckCards.Num());
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Deck is empty, cannot draw!"));
+			UE_LOG(LogTKGame, Warning, TEXT("Deck is empty, cannot draw!"));
 			return nullptr;
 		}
 	}
@@ -110,7 +129,7 @@ TArray<UTKCardBase*> UTKDeckComponent::DrawMultipleCards(int32 Count)
 			break;
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("Drew %d cards from deck"), Drawn.Num());
+	UE_LOG(LogTKGame, Log, TEXT("Drew %d cards from deck"), Drawn.Num());
 	return Drawn;
 }
 
@@ -119,5 +138,5 @@ void UTKDeckComponent::DiscardCard(UTKCardBase* Card)
 	if (Card == nullptr) return;
 	Card->ZoneType = ETKCardZone::DiscardPile;
 	DiscardPile.Add(Card);
-	UE_LOG(LogTemp, Log, TEXT("Card [%s] discarded to pile"), *Card->CardDefId.ToString());
+	UE_LOG(LogTKGame, Log, TEXT("Card [%s] discarded to pile"), *Card->CardDefId.ToString());
 }
