@@ -38,6 +38,9 @@ public:
 	/** 绑定游戏结果文本块 */
 	void SetGameResultText(UTextBlock* Text) { GameResultText = Text; }
 
+	/** 绑定手牌信息文本块 */
+	void SetHandCardsText(UTextBlock* Text) { HandCardsText = Text; }
+
 protected:
 	/** 回合信息（回合号、当前玩家） */
 	UPROPERTY()
@@ -58,6 +61,10 @@ protected:
 	/** 游戏结果 */
 	UPROPERTY()
 	TObjectPtr<UTextBlock> GameResultText;
+
+	/** 手牌信息 */
+	UPROPERTY()
+	TObjectPtr<UTextBlock> HandCardsText;
 
 	/** 刷新所有显示数据 */
 	void RefreshDisplay();

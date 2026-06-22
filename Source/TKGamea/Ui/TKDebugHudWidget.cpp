@@ -1,10 +1,13 @@
-﻿#include "TKGamea.h"
-#include "TKDebugHudWidget.h"
+﻿#include "TKDebugHudWidget.h"
+#include "TKGamea.h"
 #include "Core/TKGameStateBase.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKTurnComponentBase.h"
+#include "Game/TKCardBase.h"
 #include "Cards/TKDeckComponent.h"
+#include "Cards/TKCardZoneComponent.h"
 #include "GameFramework/GameModeBase.h"
+#include "GameFramework/PlayerController.h"
 #include "Components/TextBlock.h"
 
 UTKDebugHudWidget::UTKDebugHudWidget(const FObjectInitializer& Initializer)
@@ -119,6 +122,36 @@ void UTKDebugHudWidget::RefreshDisplay()
 			}
 		}
 		if (GameResultText) GameResultText->SetText(FText::FromString(ResultStr));
+	}
+
+	// 手牌信息
+	if (HandCardsText)
+	{
+		FString HandStr = TEXT("--- My Hand ---\n");
+		APlayerController* LocalPC = GetOwningPlayer();
+		if (LocalPC && LocalPC->PlayerState)
+		{
+			ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(LocalPC->PlayerState);
+			if (TKPS)
+			{
+				UTKCardZoneComponent* Zone = TKPS->GetCardZone();
+				if (Zone)
+				{
+					TArray<UTKCardBase*> Hand = Zone->GetHandCards();
+					HandStr += FString::Printf(TEXT("Count: %d\n"), Hand.Num());
+					for (int32 i = 0; i < Hand.Num(); i++)
+					{
+						UTKCardBase* Card = Hand[i];
+						if (Card)
+						{
+							FString TagStr = Card->EffectTags.Num() > 0 ? Card->EffectTags[0].GetTagName().ToString() : TEXT("-");
+							HandStr += FString::Printf(TEXT("[%d] %s | %s\n"), i, *Card->CardName.ToString(), *TagStr);
+						}
+					}
+				}
+			}
+		}
+		HandCardsText->SetText(FText::FromString(HandStr));
 	}
 }
 

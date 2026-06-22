@@ -1,5 +1,5 @@
-﻿#include "TKGamea.h"
-#include "TKDeckComponent.h"
+﻿#include "TKDeckComponent.h"
+#include "TKGamea.h"
 #include "Game/TKCardBase.h"
 #include "Game/TKCard_Basic.h"
 #include "Game/TKCard_Trick.h"
@@ -7,6 +7,7 @@
 #include "Game/TKCard_Equipment.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
+#include "Engine/DataTable.h"
 
 UTKDeckComponent::UTKDeckComponent(const FObjectInitializer& Initializer)
 	: Super(Initializer)
@@ -49,6 +50,42 @@ UTKCardBase* UTKDeckComponent::CreateCardInstance(const FTKDebugCardEntry& Entry
 		NextInstanceId++;
 	}
 	return Card;
+}
+
+void UTKDeckComponent::InitFromDataTable(UDataTable* DataTable)
+{
+	if (!DataTable) return;
+
+	DeckCards.Empty();
+	DiscardPile.Empty();
+	NextInstanceId = 0;
+
+	static const FString ContextStr(TEXT("TKDeckComponent::InitFromDataTable"));
+	TArray<FTKCardDef*> Rows;
+	DataTable->GetAllRows<FTKCardDef>(ContextStr, Rows);
+
+	for (const FTKCardDef* Row : Rows)
+	{
+		if (!Row) continue;
+		for (int32 i = 0; i < Row->Count; i++)
+		{
+			// 构造临时 FTKDebugCardEntry 复用工厂方法
+			FTKDebugCardEntry Entry;
+			Entry.CardDefId  = Row->CardDefId;
+			Entry.CardName   = Row->Name;
+			Entry.CardType   = Row->CardType;
+			Entry.Suit       = Row->Suit;
+			Entry.Rank       = Row->Rank;
+			Entry.EffectTags = Row->EffectTags;
+			Entry.Count      = 1;
+
+			UTKCardBase* Card = CreateCardInstance(Entry);
+			if (Card) DeckCards.Add(Card);
+		}
+	}
+
+	Shuffle();
+	UE_LOG(LogTKGame, Log, TEXT("Deck initialized from DataTable with %d cards"), DeckCards.Num());
 }
 
 void UTKDeckComponent::InitDebugDeck(const TArray<FTKDebugCardEntry>& DebugCards)

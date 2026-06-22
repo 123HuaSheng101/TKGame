@@ -1,7 +1,7 @@
-﻿#include "TKGamea.h"
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "TKCheatManager.h"
+#include "TKGamea.h"
 #include "TKPlayerControllerBase.h"
 #include "TKPlayerStateBase.h"
 #include "TKGameModeBase.h"

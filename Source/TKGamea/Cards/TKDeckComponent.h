@@ -26,6 +26,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Deck")
 	void InitDebugDeck(const TArray<FTKDebugCardEntry>& DebugCards);
 
+	/** 从 DataTable 初始化牌堆 */
+	UFUNCTION(BlueprintCallable, Category = "Deck")
+	void InitFromDataTable(UDataTable* DataTable);
+
 	// ---- 牌堆操作 ----
 
 	/** Fisher-Yates 洗牌 */

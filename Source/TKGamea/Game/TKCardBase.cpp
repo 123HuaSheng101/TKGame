@@ -1,13 +1,15 @@
-﻿#include "TKGamea.h"
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "TKCardBase.h"
+#include "TKGamea.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKGameStateBase.h"
+#include "Core/TKGameModeBase.h"
 #include "Core/TKTurnComponentBase.h"
 #include "Core/TKEventComponentBase.h"
 #include "Core/TKResponseComponent.h"
+#include "Cards/TKDeckComponent.h"
 #include "TKGameTypes.h"
 
 UTKCardBase::UTKCardBase()
@@ -181,10 +183,20 @@ void UTKCardBase::OnAfterUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* 
 		EventComp->PostEvent(Ctx);
 	}
 
-	// 默认：非装备牌使用后进入弃牌堆
+	// 非装备/非延时锦囊：使用后进入弃牌堆
 	if (CardType != ETKCardType::Equipment && CardType != ETKCardType::DelayedTrick)
 	{
-		UE_LOG(LogTKGame, Log, TEXT("UTKCardBase::OnAfterUse - Card [%s] will be discarded"), *CardDefId.ToString());
+		ATKGameModeBase* GameMode = User ? Cast<ATKGameModeBase>(User->GetWorld()->GetAuthGameMode()) : nullptr;
+		UTKDeckComponent* Deck = GameMode ? GameMode->GetDeckComponent() : nullptr;
+		if (Deck)
+		{
+			Deck->DiscardCard(this);
+			UE_LOG(LogTKGame, Log, TEXT("UTKCardBase::OnAfterUse - Card [%s] discarded"), *CardDefId.ToString());
+		}
+		else
+		{
+			UE_LOG(LogTKGame, Log, TEXT("UTKCardBase::OnAfterUse - Card [%s] will be discarded (Deck not found)"), *CardDefId.ToString());
+		}
 	}
 }
 

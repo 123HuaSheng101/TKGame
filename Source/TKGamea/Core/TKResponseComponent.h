@@ -49,7 +49,7 @@ public:
 	TArray<APlayerState*> GetAlivePlayers() const;
 
 	/** 构建逆时针响应对列（从指定玩家起，跳过被跳过者） */
-	static TArray<APlayerState*> BuildResponderQueue(const TArray<APlayerState*>& AllPlayers, APlayerState* StartFrom, APlayerState* SkipPlayer = nullptr);
+	static TArray<APlayerState*> BuildResponderQueue(const TArray<TObjectPtr<APlayerState>>& AllPlayers, APlayerState* StartFrom, APlayerState* SkipPlayer = nullptr);
 
 protected:
 	void OnRequestTimeout();

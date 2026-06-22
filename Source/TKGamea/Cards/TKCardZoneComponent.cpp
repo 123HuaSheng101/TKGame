@@ -1,5 +1,5 @@
-﻿#include "TKGamea.h"
-#include "TKCardZoneComponent.h"
+﻿#include "TKCardZoneComponent.h"
+#include "TKGamea.h"
 #include "Game/TKCardBase.h"
 #include "Net/UnrealNetwork.h"
 

@@ -1,5 +1,5 @@
-﻿#include "TKGamea.h"
-#include "TKResponseComponent.h"
+﻿#include "TKResponseComponent.h"
+#include "TKGamea.h"
 #include "TKGameStateBase.h"
 #include "TKPlayerStateBase.h"
 #include "TKPlayerControllerBase.h"
@@ -9,11 +9,12 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
-static FGameplayTag Tag_Card_Negate = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Negate"), false);
-static FGameplayTag Tag_Card_Peach  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false);
-static FGameplayTag Tag_Card_Wine   = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"), false);
-static FGameplayTag Tag_Card_Slash  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Slash"), false);
-static FGameplayTag Tag_Card_Dodge  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"), false);
+// 延迟获取常用 Tag（函数内 static 避免 Unity Build 跨文件 static 变量冲突）
+namespace
+{
+	static const FGameplayTag& Tag_Peach() { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false); return T; }
+	static const FGameplayTag& Tag_Wine()  { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"),  false); return T; }
+}
 
 UTKResponseComponent::UTKResponseComponent(const FObjectInitializer& Initializer)
 	: Super(Initializer)
@@ -42,7 +43,7 @@ TArray<APlayerState*> UTKResponseComponent::GetAlivePlayers() const
 	return Result;
 }
 
-TArray<APlayerState*> UTKResponseComponent::BuildResponderQueue(const TArray<APlayerState*>& AllPlayers, APlayerState* StartFrom, APlayerState* SkipPlayer)
+TArray<APlayerState*> UTKResponseComponent::BuildResponderQueue(const TArray<TObjectPtr<APlayerState>>& AllPlayers, APlayerState* StartFrom, APlayerState* SkipPlayer)
 {
 	TArray<APlayerState*> Queue;
 	int32 StartIdx = AllPlayers.IndexOfByKey(StartFrom);
@@ -212,7 +213,7 @@ void UTKResponseComponent::StartNextInQueue()
 void UTKResponseComponent::OnSequentialTimeout()
 {
 	// AOE 响应超时：当前玩家未出杀/闪 → 扣1血
-	if (ActiveRequest.RequiredTag != Tag_Card_Peach)
+	if (ActiveRequest.RequiredTag != Tag_Peach())
 	{
 		ATKPlayerStateBase* CurrentTarget = Cast<ATKPlayerStateBase>(ActiveRequest.PrimaryTarget);
 		if (CurrentTarget && CurrentTarget->IsAlive())
@@ -238,7 +239,7 @@ bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCard
 
 	// 濒死时酒也可用（RequiredTag 是 Peach 时允许 Wine）
 	bool bTagMatch = (FirstTag == ActiveRequest.RequiredTag);
-	if (!bTagMatch && ActiveRequest.RequiredTag == Tag_Card_Peach && FirstTag == Tag_Card_Wine)
+	if (!bTagMatch && ActiveRequest.RequiredTag == Tag_Peach() && FirstTag == Tag_Wine())
 	{
 		bTagMatch = true; // 酒可代桃救人
 	}
@@ -248,6 +249,16 @@ bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCard
 		UE_LOG(LogTKGame, Warning, TEXT("ResponseComponent: Tag mismatch. Expected [%s], got [%s]"),
 			*ActiveRequest.RequiredTag.GetTagName().ToString(), *FirstTag.GetTagName().ToString());
 		return false;
+	}
+
+	// Chain 模式：先检查重复，再记录
+	if (ActiveRequest.Type == ETKResponseType::Chain)
+	{
+		if (ActiveRequest.AlreadyResponded.Contains(Responder))
+		{
+			UE_LOG(LogTKGame, Warning, TEXT("ResponseComponent: [%s] already responded in this chain"), *Responder->GetPlayerName());
+			return false;
+		}
 	}
 
 	ActiveRequest.AlreadyResponded.Add(Responder);
@@ -277,7 +288,7 @@ bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCard
 		// Sequential：判断是濒死求桃还是 AOE
 		//   濒死(Peach)：有人出桃→立即结算
 		//   AOE(Slash/Dodge)：当前玩家安全→推进下一个
-		if (ActiveRequest.RequiredTag == Tag_Card_Peach)
+		if (ActiveRequest.RequiredTag == Tag_Peach())
 		{
 			ResolveRequest(ETKResponseResult::Responded, Responder, ResponseCard);
 		}

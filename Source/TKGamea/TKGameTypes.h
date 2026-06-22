@@ -137,7 +137,7 @@ public:
 
 /** 卡牌模板定义（来自数据表） */
 USTRUCT(BlueprintType)
-struct FTKCardDef
+struct FTKCardDef : public FTableRowBase
 {
     GENERATED_BODY()
 public:
@@ -164,6 +164,10 @@ public:
     /** 效果标签列表 */
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     TArray<FGameplayTag> EffectTags;
+
+    /** 该种牌的数量（DataTable 用） */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    int32 Count = 1;
 };
 
 /** 卡牌运行时实例（轻量引用结构，非 UObject） */

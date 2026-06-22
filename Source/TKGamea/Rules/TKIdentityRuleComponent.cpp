@@ -1,5 +1,5 @@
-﻿#include "TKGamea.h"
-#include "TKIdentityRuleComponent.h"
+﻿#include "TKIdentityRuleComponent.h"
+#include "TKGamea.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKGameModeBase.h"
 #include "Cards/TKCardZoneComponent.h"

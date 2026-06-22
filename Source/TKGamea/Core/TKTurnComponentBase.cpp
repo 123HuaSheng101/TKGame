@@ -1,9 +1,12 @@
-﻿#include "TKGamea.h"
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "TKTurnComponentBase.h"
+#include "TKGamea.h"
 #include "TKGameStateBase.h"
 #include "TKPlayerStateBase.h"
+#include "TKGameModeBase.h"
+#include "Cards/TKDeckComponent.h"
+#include "Cards/TKCardZoneComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
@@ -42,6 +45,7 @@ void UTKTurnComponentBase::StartTurn(APlayerState* Player)
 	CurrentPlayer = Player;
 	CurrentTurnNumber++;
 	SlashUsedThisPhase = 0;
+	bWined = false;
 	CurrentPhase = ETKTurnPhase::Prepare;
 
 	UE_LOG(LogTKGame, Log, TEXT("=== Turn %d Start: Player [%s] ==="), CurrentTurnNumber, *Player->GetPlayerName());
@@ -159,16 +163,69 @@ APlayerState* UTKTurnComponentBase::FindNextAlivePlayer() const
 
 void UTKTurnComponentBase::OnDrawPhase()
 {
-	// 默认摸牌逻辑：摸 2 张
-	// 具体摸牌由 GameMode 的规则组件完成，这里仅输出日志
-	UE_LOG(LogTKGame, Log, TEXT("  Draw Phase: default draw 2 cards"));
+	// 摸 2 张牌到当前玩家手牌
+	ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(CurrentPlayer);
+	if (!TKPS || !TKPS->IsAlive())
+	{
+		AdvancePhase();
+		return;
+	}
+
+	ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(GetWorld()->GetAuthGameMode());
+	if (!GameMode)
+	{
+		AdvancePhase();
+		return;
+	}
+
+	UTKDeckComponent* Deck = GameMode->GetDeckComponent();
+	UTKCardZoneComponent* Zone = TKPS->GetCardZone();
+	if (Deck && Zone)
+	{
+		TArray<UTKCardBase*> Drawn = Deck->DrawMultipleCards(2);
+		for (UTKCardBase* Card : Drawn)
+		{
+			Zone->AddCardToHand(Card);
+		}
+		TKPS->HandCardCount = Zone->GetHandCardCount();
+		UE_LOG(LogTKGame, Log, TEXT("  Draw Phase: [%s] drew %d cards"), *TKPS->GetPlayerName(), Drawn.Num());
+	}
+
 	AdvancePhase();
 }
 
 void UTKTurnComponentBase::OnDiscardPhase()
 {
-	// 默认弃牌逻辑：检查手牌数是否超过体力
-	// 具体弃牌由 GameMode 的规则组件完成，这里仅输出日志
-	UE_LOG(LogTKGame, Log, TEXT("  Discard Phase: discard down to health limit"));
+	ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(CurrentPlayer);
+	if (!TKPS || !TKPS->IsAlive())
+	{
+		AdvancePhase();
+		return;
+	}
+
+	UTKCardZoneComponent* Zone = TKPS->GetCardZone();
+	if (Zone && Zone->GetHandCardCount() > TKPS->CurrentHealth)
+	{
+		// TODO: 玩家手动选择弃牌，此处自动随机弃掉多余的牌
+		ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(GetWorld()->GetAuthGameMode());
+		UTKDeckComponent* Deck = GameMode ? GameMode->GetDeckComponent() : nullptr;
+		int32 ToDiscard = Zone->GetHandCardCount() - TKPS->CurrentHealth;
+		UE_LOG(LogTKGame, Log, TEXT("  Discard Phase: [%s] needs to discard %d cards (hand=%d > hp=%d)"),
+			*TKPS->GetPlayerName(), ToDiscard, Zone->GetHandCardCount(), TKPS->CurrentHealth);
+
+		if (Deck)
+		{
+			TArray<UTKCardBase*> Hand = Zone->GetHandCards();
+			for (int32 i = 0; i < ToDiscard && Hand.Num() > 0; i++)
+			{
+				int32 Idx = FMath::RandRange(0, Hand.Num() - 1);
+				UTKCardBase* Card = Hand[Idx];
+				Zone->RemoveCardFromHand(Card);
+				Deck->DiscardCard(Card);
+			}
+			TKPS->HandCardCount = Zone->GetHandCardCount();
+		}
+	}
+
 	AdvancePhase();
 }

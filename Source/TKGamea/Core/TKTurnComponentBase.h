@@ -71,6 +71,25 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
 	int32 GetSlashUsedCount() const { return SlashUsedThisPhase; }
 
+	/** 每回合默认杀次数上限（无装备/技能时=1） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	int32 GetMaxSlashCount() const { return 1; }
+
+	/** 消耗一次杀次数 */
+	void ConsumeSlash() { SlashUsedThisPhase++; }
+
+	/** 是否还有杀使用次数 */
+	bool CanUseSlash() const { return SlashUsedThisPhase < GetMaxSlashCount(); }
+
+	// ---- 酒状态 ----
+
+	/** 当前回合玩家是否有酒状态（下张杀伤害+1） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	bool IsWined() const { return bWined; }
+
+	/** 设置酒状态 */
+	void SetWined(bool bVal) { bWined = bVal; }
+
 protected:
 	/**
 	 * 摸牌阶段默认行为
@@ -108,4 +127,8 @@ protected:
 	/** 当前阶段中"杀"的使用计数（仅服务器，不同步） */
 	UPROPERTY(BlueprintReadOnly, Category = "Turn")
 	int32 SlashUsedThisPhase = 0;
+
+	/** 酒状态（仅服务器，不同步） */
+	UPROPERTY(BlueprintReadOnly, Category = "Turn")
+	bool bWined = false;
 };

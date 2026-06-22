@@ -1,7 +1,7 @@
-﻿#include "TKGamea.h"
-// TKCard_DelayedTrick.cpp
+﻿// TKCard_DelayedTrick.cpp
 
 #include "TKCard_DelayedTrick.h"
+#include "TKGamea.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKEventComponentBase.h"

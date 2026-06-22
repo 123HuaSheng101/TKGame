@@ -11,7 +11,6 @@
 
 class ATKPlayerStateBase;
 
-
 /**
  * 游戏模式基类
  * 负责管理游戏生命周期、身份模式开局、规则与牌堆组件的持有
@@ -23,11 +22,15 @@ class TKGAMEA_API ATKGameModeBase : public AGameMode
 public:
 	ATKGameModeBase(const FObjectInitializer& Initializer);
 
-	// ---- 模式配置 ----
+	// ---- 配置 ----
 
 	/** 当前游戏模式的配置参数（人数、模式等） */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
 	FTKModeConfig ModeConfig;
+
+	/** 卡牌数据表（M3 支持 DataTable 驱动牌堆） */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
+	TObjectPtr<UDataTable> DeckDataTable;
 
 	// ---- 身份模式入口 ----
 
@@ -39,6 +42,10 @@ public:
 	void StartIdentityGame();
 
 	// ---- 工具 ----
+
+	/** 获取牌堆组件 */
+	UFUNCTION(BlueprintCallable, Category = "Game")
+	UTKDeckComponent* GetDeckComponent() const { return DeckComponent; }
 
 	/**
 	 * 结束游戏，记录胜方并通知 GameState 复制结果

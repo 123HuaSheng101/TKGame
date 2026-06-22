@@ -1,9 +1,11 @@
-﻿#include "TKGamea.h"
-// TKCard_Basic.cpp
+﻿// TKCard_Basic.cpp
 
 #include "TKCard_Basic.h"
+#include "TKGamea.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
+#include "Core/TKGameStateBase.h"
+#include "Core/TKTurnComponentBase.h"
 
 static FGameplayTag Tag_Card_Slash  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Slash"),  false);
 static FGameplayTag Tag_Card_Dodge  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"),  false);
@@ -55,10 +57,24 @@ bool UTKCard_Basic::CanUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Ta
 	// 杀、闪：需要目标存活
 	if (!Target->IsAlive()) return false;
 
-	// 杀不能对自己
+	// 杀不能对自己 + 检查次数限制
 	if (FirstTag == Tag_Card_Slash)
 	{
-		return Target != User->PlayerState;
+		if (Target == User->PlayerState) return false;
+
+		// 检查杀次数
+		ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(User->GetWorld()->GetGameState());
+		if (TKGS)
+		{
+			UTKTurnComponentBase* TurnComp = TKGS->GetTurnComponent();
+			if (TurnComp && !TurnComp->CanUseSlash())
+			{
+				UE_LOG(LogTKGame, Warning, TEXT("CanUse: Slash limit reached! Used=%d"),
+					TurnComp->GetSlashUsedCount());
+				return false;
+			}
+		}
+		return true;
 	}
 
 	// 闪不在主动 Use 流程中使用，由响应系统处理
@@ -76,10 +92,30 @@ void UTKCard_Basic::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 
 	if (FirstTag == Tag_Card_Slash)
 	{
-		// 对目标造成 1 点伤害（仅在响应窗口超时后执行）
-		Target->ApplyDamage(1);
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Basic::Slash - [%s] deals 1 damage to [%s]"),
-			*User->GetName(), *Target->GetPlayerName());
+		// 酒状态：伤害+1
+		int32 Damage = 1;
+		ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(User->GetWorld()->GetGameState());
+		if (TKGS)
+		{
+			UTKTurnComponentBase* TurnComp = TKGS->GetTurnComponent();
+			if (TurnComp)
+			{
+				// 消耗杀次数
+				TurnComp->ConsumeSlash();
+
+				// 酒加成
+				if (TurnComp->IsWined())
+				{
+					Damage = 2;
+					TurnComp->SetWined(false);
+					UE_LOG(LogTKGame, Log, TEXT("TKCard_Basic::Slash - Wine bonus! damage=%d"), Damage);
+				}
+			}
+		}
+
+		Target->ApplyDamage(Damage);
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Basic::Slash - [%s] deals %d damage to [%s]"),
+			*User->GetName(), Damage, *Target->GetPlayerName());
 	}
 	else if (FirstTag == Tag_Card_Dodge)
 	{
@@ -101,8 +137,17 @@ void UTKCard_Basic::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 		}
 		else
 		{
-			// TODO: 标记 Wine 状态（下一张杀伤害+1）
-			UE_LOG(LogTKGame, Log, TEXT("TKCard_Basic::Wine - [%s] used wine, next slash damage +1"), *User->GetName());
+			// 设置酒状态（下一张杀伤害+1）
+			ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(User->GetWorld()->GetGameState());
+			if (TKGS)
+			{
+				UTKTurnComponentBase* TurnComp = TKGS->GetTurnComponent();
+				if (TurnComp)
+				{
+					TurnComp->SetWined(true);
+					UE_LOG(LogTKGame, Log, TEXT("TKCard_Basic::Wine - [%s] set wine state, next slash damage +1"), *User->GetName());
+				}
+			}
 		}
 	}
 	else

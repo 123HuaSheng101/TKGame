@@ -120,6 +120,9 @@ public:
 	/** 濒死求桃回调 */
 	void OnDyingResolved(const FResponseResult& Result);
 
+	/** 检查游戏结束条件 */
+	void CheckGameEnd();
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:

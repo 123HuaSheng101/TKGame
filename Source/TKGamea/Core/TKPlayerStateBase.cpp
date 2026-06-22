@@ -1,17 +1,19 @@
-﻿#include "TKGamea.h"
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "TKPlayerStateBase.h"
+#include "TKGamea.h"
 #include "TKGameStateBase.h"
 #include "TKResponseComponent.h"
+#include "TKGameModeBase.h"
 #include "Game/TKCardBase.h"
 #include "Cards/TKCardZoneComponent.h"
+#include "Cards/TKDeckComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 
-static FGameplayTag Tag_Card_Peach = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false);
-static FGameplayTag Tag_Card_Wine  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"),  false);
+// 延迟获取常用 Tag（避免 Unity Build 中 static 变量跨文件冲突）
+namespace { static const FGameplayTag& Tag_Peach() { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false); return T; } }
 
 ATKPlayerStateBase::ATKPlayerStateBase(const FObjectInitializer& Initializer)
 	: Super(Initializer)
@@ -89,20 +91,13 @@ void ATKPlayerStateBase::TriggerDyingResponse()
 
 	FResponseRequest Req;
 	Req.Type = ETKResponseType::Sequential;
-	Req.RequiredTag = Tag_Card_Peach;  // 需要桃或酒
+	Req.RequiredTag = Tag_Peach();  // 需要桃或酒
 	Req.SourceCard = nullptr;
 	Req.Initiator = nullptr;
 	Req.PrimaryTarget = this;
 
-	// 构建逆时针响应对列（从当前回合玩家起）
-	TArray<APlayerState*> AllPlayers;
-	for (const TObjectPtr<APlayerState>& PS : TKGS->PlayerArray)
-	{
-		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
-		if (TKPS && TKPS->IsAlive())
-			AllPlayers.Add(PS);
-	}
-	Req.ResponderQueue = UTKResponseComponent::BuildResponderQueue(AllPlayers, this, nullptr);
+	// 构建逆时针响应对列（从当前回合玩家起，直接用PlayerArray）
+	Req.ResponderQueue = UTKResponseComponent::BuildResponderQueue(TKGS->PlayerArray, this, nullptr);
 
 	UE_LOG(LogTKGame, Log, TEXT("Player [%s] dying: requesting rescue from %d players"), *GetPlayerName(), Req.ResponderQueue.Num());
 	ResponseComp->RequestResponse(Req, FOnResponseResolved::CreateUObject(this, &ATKPlayerStateBase::OnDyingResolved));
@@ -121,7 +116,81 @@ void ATKPlayerStateBase::OnDyingResolved(const FResponseResult& Result)
 	{
 		// 无人救 → 死亡
 		bAlive = false;
-		UE_LOG(LogTKGame, Log, TEXT("Player [%s] has died! No one responded."), *GetPlayerName());
-		// TODO: 死亡结算（弃牌、身份翻牌、胜负判定）
+		bIdentityRevealed = true;
+		UE_LOG(LogTKGame, Log, TEXT("Player [%s] has died! Identity=%d"), *GetPlayerName(), (uint8)Identity);
+
+		// 弃掉所有手牌和装备到弃牌堆
+		ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(GetWorld()->GetAuthGameMode());
+		if (CardZone && GameMode)
+		{
+			UTKDeckComponent* Deck = GameMode->GetDeckComponent();
+			if (Deck)
+			{
+				// 弃手牌
+				for (UTKCardBase* Card : CardZone->GetHandCards())
+				{
+					if (Card) Deck->DiscardCard(Card);
+				}
+				// 弃装备
+				for (UTKCardBase* Card : CardZone->GetEquipmentCards())
+				{
+					if (Card) Deck->DiscardCard(Card);
+				}
+				// 弃判定区
+				for (UTKCardBase* Card : CardZone->GetJudgementCards())
+				{
+					if (Card) Deck->DiscardCard(Card);
+				}
+			}
+			CardZone->ClearAllZones();
+		}
+
+		// 检查胜负
+		CheckGameEnd();
+	}
+}
+
+void ATKPlayerStateBase::CheckGameEnd()
+{
+	ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(GetWorld()->GetGameState());
+	if (!TKGS) return;
+
+	// 统计各阵营存活
+	int32 RebelAlive = 0;
+	bool bLordDead = false;
+	for (const TObjectPtr<APlayerState>& PS : TKGS->PlayerArray)
+	{
+		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+		if (!TKPS) continue;
+		if (TKPS->IsAlive() && TKPS->Identity == ETKIdentity::Rebel) RebelAlive++;
+		if (!TKPS->IsAlive() && TKPS->Identity == ETKIdentity::Lord) bLordDead = true;
+	}
+
+	TArray<APlayerState*> Winners;
+	ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(GetWorld()->GetAuthGameMode());
+
+	// 主公死亡 → 反贼胜
+	if (bLordDead)
+	{
+		for (const TObjectPtr<APlayerState>& PS : TKGS->PlayerArray)
+		{
+			ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+			if (TKPS && TKPS->Identity == ETKIdentity::Rebel)
+				Winners.Add(PS);
+		}
+		if (GameMode) GameMode->EndGame(ETKGameResult::RebelWin, Winners);
+		return;
+	}
+
+	// 反贼全灭 → 主忠胜
+	if (RebelAlive == 0)
+	{
+		for (const TObjectPtr<APlayerState>& PS : TKGS->PlayerArray)
+		{
+			ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+			if (TKPS && (TKPS->Identity == ETKIdentity::Lord || TKPS->Identity == ETKIdentity::Loyalist))
+				Winners.Add(PS);
+		}
+		if (GameMode) GameMode->EndGame(ETKGameResult::LordLoyalistWin, Winners);
 	}
 }

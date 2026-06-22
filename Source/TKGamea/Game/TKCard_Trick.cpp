@@ -1,7 +1,7 @@
-﻿#include "TKGamea.h"
-// TKCard_Trick.cpp
+﻿// TKCard_Trick.cpp
 
 #include "TKCard_Trick.h"
+#include "TKGamea.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKResponseComponent.h"
@@ -151,8 +151,20 @@ void UTKCard_Trick::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 	else if (FirstTag.MatchesTag(Tag_Card_AOE_Heal_1))
 	{
 		// 桃园结义：全体回 1 血
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_Heal - [%s] plays Peach Garden (pending response system)"), *User->GetName());
-		// TODO: 遍历全体存活玩家 Heal(1)
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_Heal - [%s] plays Peach Garden"), *User->GetName());
+		AGameStateBase* GS = User->GetWorld()->GetGameState<AGameStateBase>();
+		if (GS)
+		{
+			for (const TObjectPtr<APlayerState>& PS : GS->PlayerArray)
+			{
+				ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+				if (TKPS && TKPS->IsAlive())
+				{
+					TKPS->Heal(1);
+					UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_Heal - [%s] receives 1 HP"), *TKPS->GetPlayerName());
+				}
+			}
+		}
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_Negate))
 	{

@@ -1,7 +1,7 @@
-﻿#include "TKGamea.h"
-// TKCard_Equipment.cpp
+﻿// TKCard_Equipment.cpp
 
 #include "TKCard_Equipment.h"
+#include "TKGamea.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
 #include "Core/TKEventComponentBase.h"

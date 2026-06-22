@@ -4,14 +4,23 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "TKEventComponentBase.generated.h"
 
 struct FEventContext;
 class ATKPlayerControllerBase;
 
+/** 事件处理回调：返回 true 表示事件已被消费 */
+DECLARE_DELEGATE_RetVal_OneParam(bool, FOnGameEvent, const FEventContext&);
+
 /**
  * 事件组件
- * 挂载在 PlayerController 上，用于事件的触发和分发
+ * 挂载在每个 PlayerController 上，用于事件发布和本地处理
+ *
+ * 使用方式：
+ *   - 订阅：EventComp->RegisterHandler(Tag, Delegate)
+ *   - 发布：EventComp->PostEvent(Context) → 通知 GameState 广播
+ *   - M3 阶段扩展为全服广播
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class TKGAMEA_API UTKEventComponentBase : public UActorComponent
@@ -20,17 +29,20 @@ class TKGAMEA_API UTKEventComponentBase : public UActorComponent
 public:
 	UTKEventComponentBase(const FObjectInitializer& Initializer);
 
-	/**
-	 * 发布事件到事件系统
-	 * @param Context 事件上下文（包含事件 Tag、发起者、目标、参数）
-	 */
+	/** 发布事件（服务器→广播到 GameState 事件管理器） */
 	UFUNCTION(BlueprintCallable)
 	void PostEvent(FEventContext& Context);
 
-	/**
-	 * 从 PlayerController 上获取事件组件的静态工具方法
-	 * @param PlayerController 目标玩家控制器
-	 * @return 找到的事件组件，找不到返回 nullptr（不会断言崩溃）
-	 */
+	/** 本地处理事件（客户端回调） */
+	void HandleLocalEvent(const FEventContext& Context);
+
+	/** 注册事件处理器 */
+	void RegisterHandler(const FGameplayTag& EventTag, FOnGameEvent Handler);
+
+	/** 从 PlayerController 上获取事件组件的静态工具方法 */
 	static UTKEventComponentBase* Get(const ATKPlayerControllerBase* PlayerController);
+
+private:
+	/** 事件处理器映射 */
+	TMap<FGameplayTag, TArray<FOnGameEvent>> Handlers;
 };
