@@ -2,6 +2,7 @@
 
 #include "TKGameModeBase.h"
 #include "TKGamea.h"
+#include "TKGameHUD.h"
 #include "TKGameStateBase.h"
 #include "TKPlayerStateBase.h"
 #include "TKPlayerControllerBase.h"
@@ -31,6 +32,7 @@ ATKGameModeBase::ATKGameModeBase(const FObjectInitializer& ObjectInitializer)
 	bDelayedStart = true;
 
 	// 默认类绑定
+	HUDClass = ATKGameHUD::StaticClass();
 	PlayerControllerClass = ATKPlayerControllerBase::StaticClass();
 	PlayerStateClass = ATKPlayerStateBase::StaticClass();
 	GameStateClass = ATKGameStateBase::StaticClass();

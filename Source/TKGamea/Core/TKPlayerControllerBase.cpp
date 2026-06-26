@@ -4,6 +4,7 @@
 #include "TKGamea.h"
 #include "TKEventComponentBase.h"
 #include "TKGameModeBase.h"
+#include "TKGameHUD.h"
 #include "TKGameStateBase.h"
 #include "TKTurnComponentBase.h"
 #include "TKResponseComponent.h"
@@ -97,5 +98,11 @@ void ATKPlayerControllerBase::ClientPromptResponse_Implementation(const FGamepla
 {
 	UE_LOG(LogTKGame, Log, TEXT("ClientPromptResponse: Need [%s], prompt: [%s]"),
 		*RequiredTag.GetTagName().ToString(), *PromptText.ToString());
-	// TODO: UI 层弹出响应选择窗口
+
+	// 通知 HUD 弹出响应面板
+	ATKGameHUD* GameHUD = Cast<ATKGameHUD>(GetHUD());
+	if (GameHUD)
+	{
+		GameHUD->ShowResponsePanel(RequiredTag);
+	}
 }

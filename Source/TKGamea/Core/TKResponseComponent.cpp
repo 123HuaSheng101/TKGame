@@ -12,8 +12,8 @@
 // 延迟获取常用 Tag（函数内 static 避免 Unity Build 跨文件 static 变量冲突）
 namespace
 {
-	static const FGameplayTag& Tag_Peach() { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false); return T; }
-	static const FGameplayTag& Tag_Wine()  { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"),  false); return T; }
+	static const FGameplayTag& RespTag_Peach() { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false); return T; }
+	static const FGameplayTag& RespTag_Wine()  { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"),  false); return T; }
 }
 
 UTKResponseComponent::UTKResponseComponent(const FObjectInitializer& Initializer)
@@ -213,7 +213,7 @@ void UTKResponseComponent::StartNextInQueue()
 void UTKResponseComponent::OnSequentialTimeout()
 {
 	// AOE 响应超时：当前玩家未出杀/闪 → 扣1血
-	if (ActiveRequest.RequiredTag != Tag_Peach())
+	if (ActiveRequest.RequiredTag != RespTag_Peach())
 	{
 		ATKPlayerStateBase* CurrentTarget = Cast<ATKPlayerStateBase>(ActiveRequest.PrimaryTarget);
 		if (CurrentTarget && CurrentTarget->IsAlive())
@@ -239,7 +239,7 @@ bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCard
 
 	// 濒死时酒也可用（RequiredTag 是 Peach 时允许 Wine）
 	bool bTagMatch = (FirstTag == ActiveRequest.RequiredTag);
-	if (!bTagMatch && ActiveRequest.RequiredTag == Tag_Peach() && FirstTag == Tag_Wine())
+	if (!bTagMatch && ActiveRequest.RequiredTag == RespTag_Peach() && FirstTag == RespTag_Wine())
 	{
 		bTagMatch = true; // 酒可代桃救人
 	}
@@ -288,7 +288,7 @@ bool UTKResponseComponent::SubmitResponse(ATKPlayerStateBase* Responder, UTKCard
 		// Sequential：判断是濒死求桃还是 AOE
 		//   濒死(Peach)：有人出桃→立即结算
 		//   AOE(Slash/Dodge)：当前玩家安全→推进下一个
-		if (ActiveRequest.RequiredTag == Tag_Peach())
+		if (ActiveRequest.RequiredTag == RespTag_Peach())
 		{
 			ResolveRequest(ETKResponseResult::Responded, Responder, ResponseCard);
 		}
