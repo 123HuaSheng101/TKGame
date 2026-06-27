@@ -32,6 +32,10 @@ public:
 
 	// ---- View 驱动 ----
 
+	/** 主 HUD Widget（蓝图只读） */
+	UPROPERTY(BlueprintReadOnly)
+	TObjectPtr<UTKGameHudWidget> MainHud;
+
 	/** 弹出响应面板 */
 	void ShowResponsePanel(const FGameplayTag& RequiredTag);
 
@@ -78,10 +82,6 @@ protected:
 	void RefreshAll();
 
 private:
-	/** 主 HUD Widget */
-	UPROPERTY()
-	TObjectPtr<UTKGameHudWidget> MainHud;
-
 	/** Widget 类（Blueprint 覆写） */
 	UPROPERTY(EditAnywhere, Category = "HUD")
 	TSubclassOf<UTKGameHudWidget> HUDWidgetClass;
