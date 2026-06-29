@@ -9,6 +9,8 @@
 
 class ATKGameStateBase;
 class APlayerState;
+class ATKPlayerStateBase;
+class UTKCard_DelayedTrick;
 
 /**
  * 回合阶段状态机组件
@@ -53,6 +55,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Turn")
 	void EndTurn();
 
+	/** 强制停止回合状态机（游戏结束时调用） */
+	UFUNCTION(BlueprintCallable, Category = "Turn")
+	void Stop();
+
 	// ---- 查询 ----
 
 	/** 获取当前回合的玩家 */
@@ -90,7 +96,55 @@ public:
 	/** 设置酒状态 */
 	void SetWined(bool bVal) { bWined = bVal; }
 
+	// ---- 跳过阶段标记（延时锦囊用） ----
+
+	/** 是否跳过摸牌阶段（兵粮寸断） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	bool ShouldSkipDrawPhase() const { return bSkipDrawPhase; }
+
+	/** 设置跳过摸牌阶段标记 */
+	void SetSkipDrawPhase(bool bSkip) { bSkipDrawPhase = bSkip; }
+
+	/** 是否跳过出牌阶段（乐不思蜀） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	bool ShouldSkipPlayPhase() const { return bSkipPlayPhase; }
+
+	/** 设置跳过出牌阶段标记 */
+	void SetSkipPlayPhase(bool bSkip) { bSkipPlayPhase = bSkip; }
+
+	// ---- 装备 / 距离系统 ----
+
+	/**
+	 * 计算两个存活玩家之间的座位距离（不含装备修正）
+	 * @return 1 ~ N-1 的圈上最短距离
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	int32 GetRawDistance(ATKPlayerStateBase* From, ATKPlayerStateBase* To) const;
+
+	/**
+	 * 获取某玩家的武器攻击范围
+	 * 默认=1（无武器），装备武器后=武器所给范围值
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	int32 GetWeaponRange(ATKPlayerStateBase* Player) const;
+
+	/**
+	 * 检查某玩家是否能攻击到目标（武器范围 + -1马 >= 距离 + 目标+1马）
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	bool CanReachTarget(ATKPlayerStateBase* Attacker, ATKPlayerStateBase* Defender) const;
+
+	/** 检查玩家是否有八卦阵（防具） */
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Turn")
+	bool HasBaguaArmor(ATKPlayerStateBase* Player) const;
+
 protected:
+	/**
+	 * 判定阶段默认行为
+	 * 遍历当前玩家判定区的延时锦囊并逐一结算
+	 */
+	virtual void OnJudgePhase();
+
 	/**
 	 * 摸牌阶段默认行为
 	 * 子类可重写自定义摸牌逻辑
@@ -131,4 +185,10 @@ protected:
 	/** 酒状态（仅服务器，不同步） */
 	UPROPERTY(BlueprintReadOnly, Category = "Turn")
 	bool bWined = false;
+
+	/** 跳过摸牌阶段标记（兵粮寸断，每回合开始重置） */
+	bool bSkipDrawPhase = false;
+
+	/** 跳过出牌阶段标记（乐不思蜀，每回合开始重置） */
+	bool bSkipPlayPhase = false;
 };

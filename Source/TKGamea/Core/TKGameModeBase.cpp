@@ -12,6 +12,7 @@
 #include "Cards/TKCardZoneComponent.h"
 #include "Rules/TKIdentityRuleComponent.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "GameFramework/PlayerState.h"
 
 ATKGameModeBase::ATKGameModeBase(const FObjectInitializer& ObjectInitializer)
@@ -44,26 +45,34 @@ void ATKGameModeBase::OnMatchStateSet()
 	UE_LOG(LogTKGame, Log, TEXT("GameMode: Match state set to %s"), *MatchState.ToString());
 }
 
-void ATKGameModeBase::StartIdentityGame()
+bool ATKGameModeBase::StartIdentityGame()
 {
+	// Lambda: 失败时输出日志 + 屏幕红字提示
+	auto Fail = [](const FString& Reason) -> bool {
+		UE_LOG(LogTKGame, Error, TEXT("StartIdentityGame FAILED: %s"), *Reason);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red,
+				FString::Printf(TEXT("[TKGame] Start Failed: %s"), *Reason));
+		}
+		return false;
+	};
+
 	if (GetMatchState() != MatchState::WaitingToStart &&
 		GetMatchState() != MatchState::EnteringMap)
 	{
-		UE_LOG(LogTKGame, Warning, TEXT("StartIdentityGame: Cannot start, match state is %s"), *MatchState.ToString());
-		return;
+		return Fail(FString::Printf(TEXT("Invalid match state: %s"), *MatchState.ToString()));
 	}
 
 	// 1. 人数校验
 	if (GameState == nullptr)
 	{
-		UE_LOG(LogTKGame, Error, TEXT("StartIdentityGame: GameState is null"));
-		return;
+		return Fail(TEXT("GameState is null"));
 	}
 	int32 PlayerCount = GameState->PlayerArray.Num();
 	if (PlayerCount < 4 || PlayerCount > 10)
 	{
-		UE_LOG(LogTKGame, Warning, TEXT("StartIdentityGame: Need 4-10 players, got %d"), PlayerCount);
-		return;
+		return Fail(FString::Printf(TEXT("Player count %d out of range [4-10]"), PlayerCount));
 	}
 	ModeConfig.PlayerCount = PlayerCount;
 
@@ -127,6 +136,7 @@ void ATKGameModeBase::StartIdentityGame()
 
 	// 设置匹配状态为进行中
 	SetMatchState(MatchState::InProgress);
+	return true;
 }
 
 void ATKGameModeBase::AssignIdentities()
@@ -188,6 +198,10 @@ void ATKGameModeBase::SetLordFirstTurn()
 
 void ATKGameModeBase::EndGame(ETKGameResult Result, const TArray<APlayerState*>& Winners)
 {
+	// 防重复守卫
+	if (bGameEnded) return;
+	bGameEnded = true;
+
 	ATKGameStateBase* TKGameState = Cast<ATKGameStateBase>(GameState);
 	if (TKGameState == nullptr) return;
 
@@ -195,6 +209,17 @@ void ATKGameModeBase::EndGame(ETKGameResult Result, const TArray<APlayerState*>&
 	ResultData.WinnerFaction = Result;
 	ResultData.WinningPlayers = Winners;
 	TKGameState->GameResult = ResultData;
+
+	// 停止回合状态机
+	UTKTurnComponentBase* TurnComp = TKGameState->GetTurnComponent();
+	if (TurnComp)
+	{
+		TurnComp->Stop();
+		UE_LOG(LogTKGame, Log, TEXT("TurnComponent stopped — game ended"));
+	}
+
+	// 切换 MatchState
+	SetMatchState(MatchState::WaitingPostMatch);
 
 	FString ResultStr;
 	switch (Result)

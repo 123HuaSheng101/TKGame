@@ -52,12 +52,12 @@ void ATKPlayerStateBase::SetIdentity(ETKIdentity NewIdentity)
 	Identity = NewIdentity;
 }
 
-bool ATKPlayerStateBase::ApplyDamage(int32 Damage)
+bool ATKPlayerStateBase::ApplyDamage(int32 Damage,ATKPlayerStateBase* DamageSource)
 {
 	if (!bAlive || Damage <= 0)
 		return false;
-
 	CurrentHealth = FMath::Max(0, CurrentHealth - Damage);
+	LastDamageSource = DamageSource;
 	UE_LOG(LogTKGame, Log, TEXT("Player [%s] took %d damage, health now: %d"), *GetPlayerName(), Damage, CurrentHealth);
 
 	if (CurrentHealth <= 0)
@@ -124,25 +124,46 @@ void ATKPlayerStateBase::OnDyingResolved(const FResponseResult& Result)
 		if (CardZone && GameMode)
 		{
 			UTKDeckComponent* Deck = GameMode->GetDeckComponent();
-			if (Deck)
+			CardZone->ClearAndDiscardAll(Deck);
+		}
+
+		// ---- 死亡奖惩 ----
+		ATKPlayerStateBase* Killer = LastDamageSource.Get();
+		if (GameMode && Killer && Killer != this && Killer->IsAlive())
+		{
+			UTKDeckComponent* Deck = GameMode->GetDeckComponent();
+			UTKCardZoneComponent* KillerZone = Killer->GetCardZone();
+
+			if (Deck && KillerZone)
 			{
-				// 弃手牌
-				for (UTKCardBase* Card : CardZone->GetHandCards())
+				switch (Identity)
 				{
-					if (Card) Deck->DiscardCard(Card);
+				case ETKIdentity::Rebel:  // 杀反贼摸 3 张牌
+				{
+					TArray<UTKCardBase*> RewardCards = Deck->DrawMultipleCards(3);
+					for (UTKCardBase* Card : RewardCards)
+					{
+						if (Card) KillerZone->AddCardToHand(Card);
+					}
+					UE_LOG(LogTKGame, Log, TEXT("Death Reward: [%s] killed Rebel → draws 3 cards"),
+						*Killer->GetPlayerName());
+					break;
 				}
-				// 弃装备
-				for (UTKCardBase* Card : CardZone->GetEquipmentCards())
+
+				case ETKIdentity::Loyalist:  // 主公杀忠臣：弃置所有牌
 				{
-					if (Card) Deck->DiscardCard(Card);
+					if (Killer->Identity == ETKIdentity::Lord)
+					{
+						KillerZone->ClearAndDiscardAll(Deck);
+						UE_LOG(LogTKGame, Log, TEXT("Death Penalty: Lord [%s] killed Loyalist → discards all cards"),
+							*Killer->GetPlayerName());
+					}
+					break;
 				}
-				// 弃判定区
-				for (UTKCardBase* Card : CardZone->GetJudgementCards())
-				{
-					if (Card) Deck->DiscardCard(Card);
+
+				default: break;
 				}
 			}
-			CardZone->ClearAllZones();
 		}
 
 		// 检查胜负

@@ -11,6 +11,8 @@
 #include "TKEventComponentBase.h"
 #include "Game/TKCardBase.h"
 #include "Cards/TKCardZoneComponent.h"
+#include "Cards/TKDeckComponent.h"
+#include "Game/TKCard_Equipment.h"
 #include "Ui/TKDebugHudWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/World.h"
@@ -31,7 +33,12 @@ void UTKCheatManager::StartDebugGame()
 		ATKGameModeBase* GameMode = PC->GetWorld()->GetAuthGameMode<ATKGameModeBase>();
 		if (GameMode)
 		{
-			GameMode->StartIdentityGame();
+			if (!GameMode->StartIdentityGame())
+			{
+				UE_LOG(LogTKGame, Error, TEXT("CheatManager: StartIdentityGame failed"));
+				return;
+			}
+			UE_LOG(LogTKGame, Log, TEXT("CheatManager: Game started successfully"));
 		}
 	}
 	else
@@ -241,6 +248,62 @@ void UTKCheatManager::ShowPlayerStatus()
 			TKPS->SeatIndex);
 	}
 	UE_LOG(LogTKGame, Log, TEXT("=================================="));
+}
+
+void UTKCheatManager::EquipCard(int32 CardIndex)
+{
+	ATKPlayerControllerBase* PC = Cast<ATKPlayerControllerBase>(GetPlayerController());
+	if (!PC) return;
+
+	ATKPlayerStateBase* UserPS = Cast<ATKPlayerStateBase>(PC->PlayerState);
+	if (!UserPS) return;
+
+	UTKCardZoneComponent* Zone = UserPS->GetCardZone();
+	if (!Zone) return;
+
+	TArray<UTKCardBase*> Hand = Zone->GetHandCards();
+	if (CardIndex < 0 || CardIndex >= Hand.Num()) { UE_LOG(LogTKGame, Error, TEXT("EquipCard: Invalid index %d"), CardIndex); return; }
+
+	UTKCardBase* Card = Hand[CardIndex];
+	if (!Card || Card->CardType != ETKCardType::Equipment) { UE_LOG(LogTKGame, Error, TEXT("EquipCard: Not an equipment card")); return; }
+
+	UE_LOG(LogTKGame, Log, TEXT(">>> EquipCard: [%s] equips [%s]"), *UserPS->GetPlayerName(), *Card->CardName.ToString());
+
+	if (PC->HasAuthority())
+	{
+		Card->Use(PC, UserPS);
+	}
+	else
+	{
+		PC->ServerUseCard(Card);
+	}
+}
+
+void UTKCheatManager::ShowEquip()
+{
+	ATKPlayerControllerBase* PC = Cast<ATKPlayerControllerBase>(GetPlayerController());
+	if (!PC) return;
+
+	ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PC->PlayerState);
+	if (!TKPS) return;
+
+	UTKCardZoneComponent* Zone = TKPS->GetCardZone();
+	if (!Zone) return;
+
+	TArray<UTKCardBase*> EquipCards = Zone->GetEquipmentCards();
+	UE_LOG(LogTKGame, Log, TEXT("========== [%s] Equipment (%d) =========="), *TKPS->GetPlayerName(), EquipCards.Num());
+	for (int32 i = 0; i < EquipCards.Num(); i++)
+	{
+		UTKCardBase* Card = EquipCards[i];
+		if (Card)
+		{
+			UTKCard_Equipment* Equip = Cast<UTKCard_Equipment>(Card);
+			FGameplayTag Slot = Equip ? Equip->GetSlotTag() : FGameplayTag();
+			UE_LOG(LogTKGame, Log, TEXT("  [%d] %s | Slot=%s | Suit=%d | Rank=%d"),
+				i, *Card->CardName.ToString(), *Slot.GetTagName().ToString(), (uint8)Card->Suit, Card->Rank);
+		}
+	}
+	UE_LOG(LogTKGame, Log, TEXT("=========================================="));
 }
 
 // ===== HUD 命令 =====

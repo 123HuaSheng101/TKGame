@@ -7,6 +7,8 @@
 #include "TKGameModeBase.h"
 #include "Cards/TKDeckComponent.h"
 #include "Cards/TKCardZoneComponent.h"
+#include "Game/TKCard_DelayedTrick.h"
+#include "Game/TKCard_Equipment.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
@@ -46,6 +48,8 @@ void UTKTurnComponentBase::StartTurn(APlayerState* Player)
 	CurrentTurnNumber++;
 	SlashUsedThisPhase = 0;
 	bWined = false;
+	bSkipDrawPhase = false;
+	bSkipPlayPhase = false;
 	CurrentPhase = ETKTurnPhase::Prepare;
 
 	UE_LOG(LogTKGame, Log, TEXT("=== Turn %d Start: Player [%s] ==="), CurrentTurnNumber, *Player->GetPlayerName());
@@ -60,25 +64,40 @@ void UTKTurnComponentBase::EnterPhase(ETKTurnPhase NewPhase)
 	switch (CurrentPhase)
 	{
 	case ETKTurnPhase::Prepare:
-		// 准备阶段：M1 阶段暂无特殊逻辑，直接推进
+		// 准备阶段：暂无特殊逻辑，直接推进
 		AdvancePhase();
 		break;
 
 	case ETKTurnPhase::Judge:
-		// 判定阶段：M1 阶段暂无延时锦囊，直接推进
-		AdvancePhase();
+		// 判定阶段：结算延时锦囊
+		OnJudgePhase();
 		break;
 
 	case ETKTurnPhase::Draw:
-		// 摸牌阶段：默认摸 2 张
-		OnDrawPhase();
+		// 摸牌阶段：检查兵粮寸断 Skip 标记
+		if (bSkipDrawPhase)
+		{
+			UE_LOG(LogTKGame, Log, TEXT("  Draw Phase SKIPPED (兵粮寸断) for [%s]"), *CurrentPlayer->GetPlayerName());
+			AdvancePhase();
+		}
+		else
+		{
+			OnDrawPhase();
+		}
 		break;
 
 	case ETKTurnPhase::Play:
-		// 出牌阶段：重置杀计数，等待玩家操作
-		// 玩家通过 ServerAdvancePhase 主动结束出牌阶段
-		SlashUsedThisPhase = 0;
-		UE_LOG(LogTKGame, Log, TEXT("  Play Phase: waiting for player actions..."));
+		// 出牌阶段：检查乐不思蜀 Skip 标记
+		if (bSkipPlayPhase)
+		{
+			UE_LOG(LogTKGame, Log, TEXT("  Play Phase SKIPPED (乐不思蜀) for [%s]"), *CurrentPlayer->GetPlayerName());
+			AdvancePhase();
+		}
+		else
+		{
+			SlashUsedThisPhase = 0;
+			UE_LOG(LogTKGame, Log, TEXT("  Play Phase: waiting for player actions..."));
+		}
 		break;
 
 	case ETKTurnPhase::Discard:
@@ -124,6 +143,13 @@ void UTKTurnComponentBase::EndTurn()
 
 	// 切换到下一个存活玩家，开始新回合
 	StartTurn(NextPlayer);
+}
+
+void UTKTurnComponentBase::Stop()
+{
+	CurrentPlayer = nullptr;
+	CurrentPhase = ETKTurnPhase::Prepare;
+	UE_LOG(LogTKGame, Log, TEXT("TurnComponent: Stopped"));
 }
 
 APlayerState* UTKTurnComponentBase::FindNextAlivePlayer() const
@@ -194,6 +220,113 @@ void UTKTurnComponentBase::OnDrawPhase()
 	AdvancePhase();
 }
 
+void UTKTurnComponentBase::OnJudgePhase()
+{
+	ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(CurrentPlayer);
+	if (!TKPS || !TKPS->IsAlive())
+	{
+		AdvancePhase();
+		return;
+	}
+
+	UTKCardZoneComponent* Zone = TKPS->GetCardZone();
+	if (!Zone)
+	{
+		AdvancePhase();
+		return;
+	}
+
+	// 获取牌堆用于判定
+	ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(GetWorld()->GetAuthGameMode());
+	UTKDeckComponent* Deck = GameMode ? GameMode->GetDeckComponent() : nullptr;
+
+	TArray<UTKCardBase*> JudgementCards = Zone->GetJudgementCards();
+	if (JudgementCards.Num() == 0)
+	{
+		UE_LOG(LogTKGame, Log, TEXT("  Judge Phase: [%s] no delayed tricks"), *TKPS->GetPlayerName());
+		AdvancePhase();
+		return;
+	}
+
+	// 遍历并结算延时锦囊
+	for (UTKCardBase* Card : JudgementCards)
+	{
+		UTKCard_DelayedTrick* DT = Cast<UTKCard_DelayedTrick>(Card);
+		if (!DT) continue;
+
+		UE_LOG(LogTKGame, Log, TEXT("  Judge Phase: [%s] judging [%s]"), *TKPS->GetPlayerName(), *Card->CardDefId.ToString());
+
+		// 执行判定（通过 DeckComponent）
+		if (Deck)
+		{
+			FGameplayTag EffectTag = Card->EffectTags.Num() > 0 ? Card->EffectTags[0] : FGameplayTag();
+			ETKCardSuit JudgedSuit;
+			int32 JudgedRank;
+			UTKCardBase* JudgedCard = nullptr;
+
+			bool bEffective = Deck->ExecuteJudgement(EffectTag, JudgedSuit, JudgedRank, JudgedCard);
+
+			if (bEffective)
+			{
+				static FGameplayTag Tag_SkipPlay  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Skip.Play"),  false);
+				static FGameplayTag Tag_SkipDraw  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Skip.Draw"),  false);
+				static FGameplayTag Tag_Lightning = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Lightning"),  false);
+
+				if (EffectTag == Tag_SkipPlay)
+				{
+					bSkipPlayPhase = true;
+					UE_LOG(LogTKGame, Log, TEXT("    → 乐不思蜀生效！[%s] skips Play phase"), *TKPS->GetPlayerName());
+				}
+				else if (EffectTag == Tag_SkipDraw)
+				{
+					bSkipDrawPhase = true;
+					UE_LOG(LogTKGame, Log, TEXT("    → 兵粮寸断生效！[%s] skips Draw phase"), *TKPS->GetPlayerName());
+				}
+				else if (EffectTag == Tag_Lightning)
+				{
+					TKPS->ApplyDamage(3);
+					UE_LOG(LogTKGame, Log, TEXT("    → 闪电生效！[%s] takes 3 damage"), *TKPS->GetPlayerName());
+				}
+			}
+			else
+			{
+				// 判定失效 → 闪电传给下家
+				static FGameplayTag Tag_Lightning = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Lightning"), false);
+				if (EffectTag == Tag_Lightning)
+				{
+					// 从当前判定区移除
+					Zone->RemoveFromJudgement(DT);
+
+					// 找下一个存活玩家
+					APlayerState* NextPlayer = FindNextAlivePlayer();
+					if (NextPlayer && NextPlayer != TKPS)
+					{
+						ATKPlayerStateBase* NextTK = Cast<ATKPlayerStateBase>(NextPlayer);
+						if (NextTK)
+						{
+							UTKCardZoneComponent* NextZone = NextTK->GetCardZone();
+							if (NextZone)
+							{
+								NextZone->AddToJudgement(DT);
+								UE_LOG(LogTKGame, Log, TEXT("    → 闪电未生效，传给 [%s]"), *NextTK->GetPlayerName());
+							}
+						}
+					}
+					continue; // 已手动处理移除，跳过下方统一移除
+				}
+				UE_LOG(LogTKGame, Log, TEXT("    → 判定未生效，[%s] of [%s] has no effect"),
+					*Card->CardDefId.ToString(), *TKPS->GetPlayerName());
+			}
+		}
+
+		// 结算完毕，从判定区移除并弃牌
+		Zone->RemoveFromJudgement(DT);
+		if (Deck) Deck->DiscardCard(DT);
+	}
+
+	AdvancePhase();
+}
+
 void UTKTurnComponentBase::OnDiscardPhase()
 {
 	ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(CurrentPlayer);
@@ -228,4 +361,129 @@ void UTKTurnComponentBase::OnDiscardPhase()
 	}
 
 	AdvancePhase();
+}
+
+// ===== 装备 / 距离系统 =====
+
+int32 UTKTurnComponentBase::GetRawDistance(ATKPlayerStateBase* From, ATKPlayerStateBase* To) const
+{
+	if (!From || !To) return 1;
+
+	AGameStateBase* GS = Cast<AGameStateBase>(GetOwner());
+	if (!GS) return 1;
+
+	const TArray<TObjectPtr<APlayerState>>& Players = GS->PlayerArray;
+	int32 FromIdx = Players.IndexOfByKey(From);
+	int32 ToIdx   = Players.IndexOfByKey(To);
+	if (FromIdx == INDEX_NONE || ToIdx == INDEX_NONE) return 1;
+
+	int32 TotalAlive = 0;
+	for (const auto& PS : Players)
+	{
+		ATKPlayerStateBase* TKPS = Cast<ATKPlayerStateBase>(PS);
+		if (TKPS && TKPS->IsAlive()) TotalAlive++;
+	}
+
+	// 计算存活玩家环上的最短距离
+	int32 RawDist = FMath::Abs(ToIdx - FromIdx);
+	int32 Dist = FMath::Min(RawDist, TotalAlive - RawDist);
+	return FMath::Max(1, Dist);
+}
+
+int32 UTKTurnComponentBase::GetWeaponRange(ATKPlayerStateBase* Player) const
+{
+	if (!Player) return 1;
+
+	UTKCardZoneComponent* Zone = Player->GetCardZone();
+	if (!Zone) return 1;
+
+	static FGameplayTag Tag_Equip_Weapon = FGameplayTag::RequestGameplayTag(TEXT("Card.Equip.Weapon"), false);
+
+	TArray<UTKCardBase*> EquipCards = Zone->GetEquipmentCards();
+	for (UTKCardBase* Card : EquipCards)
+	{
+		if (!Card) continue;
+		for (const FGameplayTag& Tag : Card->EffectTags)
+		{
+			if (Tag.MatchesTag(Tag_Equip_Weapon))
+			{
+				// TODO: 具体武器范围应从配置表读取，此处默认武器范围=3
+				return 3;
+			}
+		}
+	}
+	return 1;
+}
+
+bool UTKTurnComponentBase::CanReachTarget(ATKPlayerStateBase* Attacker, ATKPlayerStateBase* Defender) const
+{
+	if (!Attacker || !Defender) return false;
+	if (Attacker == Defender) return false;
+
+	int32 RawDist = GetRawDistance(Attacker, Defender);
+	int32 WeaponRange = GetWeaponRange(Attacker);
+
+	// 检查攻击者是否有 -1马
+	bool bAttackerHasMinus1 = false;
+	UTKCardZoneComponent* AttackerZone = Attacker->GetCardZone();
+	if (AttackerZone)
+	{
+		static FGameplayTag Tag_Equip_Offense = FGameplayTag::RequestGameplayTag(TEXT("Card.Equip.Offense"), false);
+		for (UTKCardBase* Card : AttackerZone->GetEquipmentCards())
+		{
+			if (Card)
+			{
+				for (const FGameplayTag& Tag : Card->EffectTags)
+				{
+					if (Tag.MatchesTag(Tag_Equip_Offense)) { bAttackerHasMinus1 = true; break; }
+				}
+			}
+			if (bAttackerHasMinus1) break;
+		}
+	}
+
+	// 检查防御者是否有 +1马
+	bool bDefenderHasPlus1 = false;
+	UTKCardZoneComponent* DefenderZone = Defender->GetCardZone();
+	if (DefenderZone)
+	{
+		static FGameplayTag Tag_Equip_Defense = FGameplayTag::RequestGameplayTag(TEXT("Card.Equip.Defense"), false);
+		for (UTKCardBase* Card : DefenderZone->GetEquipmentCards())
+		{
+			if (Card)
+			{
+				for (const FGameplayTag& Tag : Card->EffectTags)
+				{
+					if (Tag.MatchesTag(Tag_Equip_Defense)) { bDefenderHasPlus1 = true; break; }
+				}
+			}
+			if (bDefenderHasPlus1) break;
+		}
+	}
+
+	// 有效攻击范围 = 武器范围 + (-1马) - (目标+1马)
+	int32 EffectiveRange = WeaponRange + (bAttackerHasMinus1 ? 1 : 0) - (bDefenderHasPlus1 ? 1 : 0);
+	EffectiveRange = FMath::Max(1, EffectiveRange);
+
+	return RawDist <= EffectiveRange;
+}
+
+bool UTKTurnComponentBase::HasBaguaArmor(ATKPlayerStateBase* Player) const
+{
+	if (!Player) return false;
+
+	UTKCardZoneComponent* Zone = Player->GetCardZone();
+	if (!Zone) return false;
+
+	static FGameplayTag Tag_Equip_Armor = FGameplayTag::RequestGameplayTag(TEXT("Card.Equip.Armor"), false);
+
+	for (UTKCardBase* Card : Zone->GetEquipmentCards())
+	{
+		if (!Card) continue;
+		for (const FGameplayTag& Tag : Card->EffectTags)
+		{
+			if (Tag.MatchesTag(Tag_Equip_Armor)) return true;
+		}
+	}
+	return false;
 }

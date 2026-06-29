@@ -57,20 +57,28 @@ bool UTKCard_Basic::CanUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Ta
 	// 杀、闪：需要目标存活
 	if (!Target->IsAlive()) return false;
 
-	// 杀不能对自己 + 检查次数限制
+	// 杀不能对自己 + 检查次数限制 + 距离校验
 	if (FirstTag == Tag_Card_Slash)
 	{
 		if (Target == User->PlayerState) return false;
 
-		// 检查杀次数
 		ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(User->GetWorld()->GetGameState());
 		if (TKGS)
 		{
 			UTKTurnComponentBase* TurnComp = TKGS->GetTurnComponent();
+
+			// 检查杀次数
 			if (TurnComp && !TurnComp->CanUseSlash())
 			{
 				UE_LOG(LogTKGame, Warning, TEXT("CanUse: Slash limit reached! Used=%d"),
 					TurnComp->GetSlashUsedCount());
+				return false;
+			}
+
+			// 距离校验：能否攻击到目标
+			if (TurnComp && !TurnComp->CanReachTarget(UserPS, Target))
+			{
+				UE_LOG(LogTKGame, Warning, TEXT("CanUse: Target [%s] out of range!"), *Target->GetPlayerName());
 				return false;
 			}
 		}
@@ -113,7 +121,7 @@ void UTKCard_Basic::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 			}
 		}
 
-		Target->ApplyDamage(Damage);
+		Target->ApplyDamage(Damage, Cast<ATKPlayerStateBase>(User->PlayerState));
 		UE_LOG(LogTKGame, Log, TEXT("TKCard_Basic::Slash - [%s] deals %d damage to [%s]"),
 			*User->GetName(), Damage, *Target->GetPlayerName());
 	}

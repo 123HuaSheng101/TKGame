@@ -58,6 +58,25 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Deck")
 	int32 GetDiscardPileCount() const { return DiscardPile.Num(); }
 
+	// ---- 判定系统 ----
+
+	/**
+	 * 执行一次判定：从牌堆顶摸一张牌，根据花色/点数/Tag 判断结果
+	 * 判定牌结算后自动进入弃牌堆
+	 * @param JudgeTag     判定条件标签（如 Card.Effect.Skip.Play / Card.Effect.Lightning）
+	 * @param OutSuit      输出：判定牌花色
+	 * @param OutRank      输出：判定牌点数
+	 * @param OutCard      输出：判定牌实例引用（已进弃牌堆）
+	 * @return true 表示判定"生效"（满足该标签定义的条件）
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Deck")
+	bool ExecuteJudgement(const FGameplayTag& JudgeTag, ETKCardSuit& OutSuit, int32& OutRank, UTKCardBase*& OutCard);
+
+	/**
+	 * 判定某花色/点数是否满足指定标签的生效条件（静态判定逻辑，供外部预判断使用）
+	 */
+	static bool IsJudgementEffective(const FGameplayTag& JudgeTag, ETKCardSuit Suit, int32 Rank);
+
 	// ---- 复制 ----
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

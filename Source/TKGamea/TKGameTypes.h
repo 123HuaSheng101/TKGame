@@ -184,6 +184,26 @@ public:
     UPROPERTY(BlueprintReadOnly)
     FName CardDefId;
 
+    /** 卡牌类型 */
+    UPROPERTY(BlueprintReadOnly)
+    ETKCardType CardType = ETKCardType::Basic;
+
+    /** 花色 */
+    UPROPERTY(BlueprintReadOnly)
+    ETKCardSuit Suit = ETKCardSuit::NoSuit;
+
+    /** 点数（1~13） */
+    UPROPERTY(BlueprintReadOnly)
+    int32 Rank = 0;
+
+    /** 显示名称 */
+    UPROPERTY(BlueprintReadOnly)
+    FText CardName;
+
+    /** 效果标签 */
+    UPROPERTY(BlueprintReadOnly)
+    TArray<FGameplayTag> EffectTags;
+
     /** 持有者 PlayerState */
     UPROPERTY(BlueprintReadOnly)
     TObjectPtr<APlayerState> Owner;

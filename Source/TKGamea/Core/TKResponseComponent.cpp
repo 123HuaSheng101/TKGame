@@ -4,8 +4,11 @@
 #include "TKPlayerStateBase.h"
 #include "TKPlayerControllerBase.h"
 #include "TKEventComponentBase.h"
+#include "TKTurnComponentBase.h"
+#include "TKGameModeBase.h"
 #include "Game/TKCardBase.h"
 #include "Game/TKCard_Basic.h"
+#include "Cards/TKDeckComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -14,6 +17,7 @@ namespace
 {
 	static const FGameplayTag& RespTag_Peach() { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"), false); return T; }
 	static const FGameplayTag& RespTag_Wine()  { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"),  false); return T; }
+	static const FGameplayTag& RespTag_Dodge() { static FGameplayTag T = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"), false); return T; }
 }
 
 UTKResponseComponent::UTKResponseComponent(const FObjectInitializer& Initializer)
@@ -212,15 +216,52 @@ void UTKResponseComponent::StartNextInQueue()
 
 void UTKResponseComponent::OnSequentialTimeout()
 {
-	// AOE 响应超时：当前玩家未出杀/闪 → 扣1血
+	// AOE 响应超时：当前玩家未手动出杀/闪
 	if (ActiveRequest.RequiredTag != RespTag_Peach())
 	{
 		ATKPlayerStateBase* CurrentTarget = Cast<ATKPlayerStateBase>(ActiveRequest.PrimaryTarget);
 		if (CurrentTarget && CurrentTarget->IsAlive())
 		{
-			CurrentTarget->ApplyDamage(1);
-			UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: AOE timeout → [%s] takes 1 damage"),
-				*CurrentTarget->GetPlayerName());
+			// 八卦阵判定：AOE 需要闪时，检查装备区是否有八卦阵
+			bool bBaguaSaved = false;
+			if (ActiveRequest.RequiredTag == RespTag_Dodge())
+			{
+				ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(GetOwner());
+				UTKTurnComponentBase* TurnComp = TKGS ? TKGS->GetTurnComponent() : nullptr;
+				if (TurnComp && TurnComp->HasBaguaArmor(CurrentTarget))
+				{
+					// 执行判定：红色花色（Heart/Diamond）→ 视为出了一张闪
+					ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(GetWorld()->GetAuthGameMode());
+					UTKDeckComponent* Deck = GameMode ? GameMode->GetDeckComponent() : nullptr;
+					if (Deck)
+					{
+						static FGameplayTag Judge_Bagua = FGameplayTag::RequestGameplayTag(TEXT("Card.Equip.Armor.Bagua"), false);
+						ETKCardSuit JudgedSuit;
+						int32 JudgedRank;
+						UTKCardBase* JudgedCard = nullptr;
+						Deck->ExecuteJudgement(Judge_Bagua, JudgedSuit, JudgedRank, JudgedCard);
+
+						if (JudgedSuit == ETKCardSuit::Heart || JudgedSuit == ETKCardSuit::Diamond)
+						{
+							bBaguaSaved = true;
+							UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: 八卦阵生效！[%s] judged RED → treated as Dodge"),
+								*CurrentTarget->GetPlayerName());
+						}
+						else
+						{
+							UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: 八卦阵失效，[%s] judged BLACK"),
+								*CurrentTarget->GetPlayerName());
+						}
+					}
+				}
+			}
+
+			if (!bBaguaSaved)
+			{
+				CurrentTarget->ApplyDamage(1, Cast<ATKPlayerStateBase>(ActiveRequest.Initiator));
+				UE_LOG(LogTKGame, Log, TEXT("ResponseComponent: AOE timeout → [%s] takes 1 damage"),
+					*CurrentTarget->GetPlayerName());
+			}
 		}
 	}
 

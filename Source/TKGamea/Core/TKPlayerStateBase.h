@@ -97,10 +97,11 @@ public:
 	/**
 	 * 受到伤害
 	 * @param Damage 伤害量
+	 * @param DamageSource 伤害来源
 	 * @return 如果玩家因此死亡返回 true，否则返回 false
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Player")
-	bool ApplyDamage(int32 Damage);
+	bool ApplyDamage(int32 Damage, ATKPlayerStateBase* DamageSource = nullptr);
 
 	/**
 	 * 恢复体力
@@ -129,4 +130,8 @@ protected:
 	/** 牌区组件（自动创建） */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	TObjectPtr<UTKCardZoneComponent> CardZone;
+
+	/** 最后一次受到伤害的来源玩家（用于奖惩判定） */
+	UPROPERTY(BlueprintReadOnly, Category = "Player")
+	TObjectPtr<ATKPlayerStateBase> LastDamageSource;
 };

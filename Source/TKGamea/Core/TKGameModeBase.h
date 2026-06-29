@@ -37,9 +37,10 @@ public:
 	/**
 	 * 启动身份模式游戏
 	 * 流程：人数校验 → 初始化牌堆 → 分配身份 → 发起始手牌 → 主公先手
+	 * @return 是否成功启动。失败时会在屏幕上显示原因。
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Game")
-	void StartIdentityGame();
+	bool StartIdentityGame();
 
 	// ---- 工具 ----
 
@@ -75,4 +76,7 @@ protected:
 	/** 身份规则组件（身份分配、死亡、胜负判定） */
 	UPROPERTY()
 	TObjectPtr<UTKIdentityRuleComponent> IdentityRule;
+
+	/** 游戏是否已结束（防重复 EndGame 守卫） */
+	bool bGameEnded = false;
 };

@@ -4,8 +4,11 @@
 #include "TKGamea.h"
 #include "Core/TKPlayerControllerBase.h"
 #include "Core/TKPlayerStateBase.h"
+#include "Core/TKGameStateBase.h"
+#include "Core/TKGameModeBase.h"
 #include "Core/TKResponseComponent.h"
 #include "Cards/TKCardZoneComponent.h"
+#include "Cards/TKDeckComponent.h"
 #include "GameFramework/GameStateBase.h"
 
 // ---- 效果标签 ----
@@ -18,6 +21,8 @@ static FGameplayTag Tag_Card_AOE_RequireDodge= FGameplayTag::RequestGameplayTag(
 static FGameplayTag Tag_Card_AOE_Heal_1      = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.AOE.Heal.1"),      false);
 static FGameplayTag Tag_Card_Harvest         = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Harvest"),         false);
 static FGameplayTag Tag_Card_BorrowKnife     = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.BorrowKnife"),     false);
+static FGameplayTag Tag_Card_Slash           = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Slash"),           false);
+static FGameplayTag Tag_Card_Dodge           = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"),           false);
 
 // 摸牌效果使用 Tag 搜索匹配
 static FName TagPrefix_Draw = TEXT("Card.Effect.Draw");
@@ -57,11 +62,11 @@ void UTKCard_Trick::BuildResponderQueue(FResponseRequest& Req, ATKPlayerStateBas
 
 	const FGameplayTag& FirstTag = EffectTags.Num() > 0 ? EffectTags[0] : FGameplayTag();
 
-	// AOE 需要玩家出的牌类型
+	// AOE 需要玩家出的牌类型（必须用实际牌 Tag 匹配，而非 AOE 标签）
 	if (FirstTag.MatchesTag(Tag_Card_AOE_RequireSlash))
-		Req.RequiredTag = Tag_Card_AOE_RequireSlash;
+		Req.RequiredTag = Tag_Card_Slash;
 	else if (FirstTag.MatchesTag(Tag_Card_AOE_RequireDodge))
-		Req.RequiredTag = Tag_Card_AOE_RequireDodge;
+		Req.RequiredTag = Tag_Card_Dodge;
 	else
 		Req.RequiredTag = FGameplayTag();
 
@@ -88,13 +93,6 @@ void UTKCard_Trick::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 {
 	const FGameplayTag& FirstTag = EffectTags.Num() > 0 ? EffectTags[0] : FGameplayTag();
 
-	// 非无懈可击的锦囊，先广播询问是否有人打无懈可击
-	// TODO: 事件系统 — 其他玩家响应无懈可击
-	if (CanBeNegated())
-	{
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick - Card [%s] is negatable, awaiting Negate response..."), *CardDefId.ToString());
-	}
-
 	// ---- 分发效果 ----
 
 	if (FirstTag == Tag_Card_Snatch)
@@ -117,8 +115,7 @@ void UTKCard_Trick::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 	}
 	else if (FirstTag == Tag_Card_Dismantle)
 	{
-		// 弃置目标区域 1 张牌
-		// TODO: 需要 UI 选择目标区域和具体卡牌，此处简化：随机弃置手牌
+		// 弃置目标区域 1 张牌（简化：随机弃置手牌）
 		UTKCardZoneComponent* TargetZone = Target ? Target->GetCardZone() : nullptr;
 		if (TargetZone && TargetZone->GetHandCardCount() > 0)
 		{
@@ -131,22 +128,79 @@ void UTKCard_Trick::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_Duel))
 	{
-		// 决斗：双方轮流出杀，先无法出的一方受 1 点伤害
-		// TODO: 响应系统 — 轮流出杀
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - [%s] challenges [%s] to a duel (pending response system)"),
-			*User->GetName(), Target ? *Target->GetPlayerName() : TEXT("None"));
-		Target->ApplyDamage(1);  // M2 阶段简化：直接扣 1 血
+		// 决斗：双方轮流出杀（简化2轮：目标先出→使用者后出）
+		ATKPlayerStateBase* UserPS = Cast<ATKPlayerStateBase>(User->PlayerState);
+		if (!Target || !UserPS) return;
+
+		ATKGameStateBase* TKGS = Cast<ATKGameStateBase>(User->GetWorld()->GetGameState());
+		UTKResponseComponent* RespComp = TKGS ? TKGS->GetResponseComponent() : nullptr;
+		if (!RespComp)
+		{
+			// 回退：直接扣血
+			Target->ApplyDamage(1, UserPS);
+			UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - no ResponseComponent, fallback: [%s] takes 1 damage"), *Target->GetPlayerName());
+			return;
+		}
+
+		// 第1轮：目标先出杀
+		FResponseRequest DuelReq1;
+		DuelReq1.Type = ETKResponseType::Sequential;
+		DuelReq1.RequiredTag = Tag_Card_Slash;
+		DuelReq1.Initiator = UserPS;
+		DuelReq1.PrimaryTarget = Target;
+		DuelReq1.ResponderQueue.Add(Target);
+		DuelReq1.CurrentResponderIndex = 0;
+
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - [%s] challenges [%s], target must respond first"),
+			*User->GetName(), *Target->GetPlayerName());
+
+		RespComp->RequestResponse(DuelReq1,
+			FOnResponseResolved::CreateLambda([UserPS, Target, RespComp, Tag_Slash = Tag_Card_Slash](const FResponseResult& R1) {
+				if (!R1.bNegated)
+				{
+					// 目标没出杀 → 目标受1伤（伤害来源=UserPS）
+					UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - [%s] failed to slash, takes 1 damage"), *Target->GetPlayerName());
+					Target->ApplyDamage(1, UserPS);
+				}
+				else
+				{
+					// 目标出杀 → 第2轮：使用者出杀
+					UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - [%s] slashed, now [%s] must respond"),
+						*Target->GetPlayerName(), *UserPS->GetPlayerName());
+
+					FResponseRequest DuelReq2;
+					DuelReq2.Type = ETKResponseType::Sequential;
+					DuelReq2.RequiredTag = Tag_Slash;
+					DuelReq2.Initiator = Target;
+					DuelReq2.PrimaryTarget = UserPS;
+					DuelReq2.ResponderQueue.Add(UserPS);
+					DuelReq2.CurrentResponderIndex = 0;
+
+					RespComp->RequestResponse(DuelReq2,
+						FOnResponseResolved::CreateLambda([UserPS, Target](const FResponseResult& R2) {
+							if (!R2.bNegated)
+							{
+								// 使用者没出杀 → 使用者受1伤（伤害来源=Target）
+								UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - [%s] failed to slash, takes 1 damage"), *UserPS->GetPlayerName());
+								UserPS->ApplyDamage(1, Target);
+							}
+							else
+							{
+								UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Duel - both slashed, no damage"));
+							}
+						}));
+				}
+			}));
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_AOE_RequireSlash))
 	{
-		// 南蛮入侵：全体出杀，否则扣 1 血
-		// TODO: 响应系统逐个询问
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_RequireSlash - [%s] plays Barbarian Invasion (pending response system)"), *User->GetName());
+		// 南蛮入侵：全员出杀已在 Sequential 响应流程中由 ResponseComponent 处理
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_Slash - [%s] Barbarian Invasion resolved by response system"), *User->GetName());
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_AOE_RequireDodge))
 	{
-		// 万箭齐发：全体出闪，否则扣 1 血
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_RequireDodge - [%s] plays Volley of Arrows (pending response system)"), *User->GetName());
+		// 万箭齐发：全员出闪已在 Sequential 响应流程中由 ResponseComponent 处理
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::AOE_Dodge - [%s] Volley of Arrows resolved by response system"), *User->GetName());
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_AOE_Heal_1))
 	{
@@ -168,28 +222,29 @@ void UTKCard_Trick::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_Negate))
 	{
-		// 无懈可击：抵消一张锦囊
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Negate - [%s] negates a trick card (consumed by event system)"), *User->GetName());
+		// 无懈可击：由 ResponseComponent 的 Chain 流程消耗，此处不执行额外逻辑
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Negate - [%s] negate card consumed by response chain"), *User->GetName());
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_Harvest))
 	{
-		// 五谷丰登
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Harvest - [%s] plays Bountiful Harvest (pending response system)"), *User->GetName());
+		// 五谷丰登 (M3 阶段实现)
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Harvest - [%s] plays Bountiful Harvest (pending M3)"), *User->GetName());
 	}
 	else if (FirstTag.MatchesTag(Tag_Card_BorrowKnife))
 	{
-		// 借刀杀人
-		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::BorrowKnife - [%s] plays Borrow Knife on [%s] (pending response system)"),
+		// 借刀杀人 (M3 阶段实现)
+		UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::BorrowKnife - [%s] plays Borrow Knife on [%s] (pending M3)"),
 			*User->GetName(), Target ? *Target->GetPlayerName() : TEXT("None"));
 	}
 	else
 	{
-		// 检查是否是 Draw 系列标签（Card.Effect.Draw.{N}）
+		// 检查是否是 Draw 系列标签（Card.Effect.Draw = 无中生有等摸牌效果）
+		bool bHandled = false;
 		for (const FGameplayTag& Tag : EffectTags)
 		{
 			if (Tag.GetTagName().ToString().StartsWith(TagPrefix_Draw.ToString()))
 			{
-				// 解析 N 值，默认 2 张
+				// 解析摸牌数量
 				int32 DrawCount = 2;
 				TArray<FString> Parts;
 				Tag.GetTagName().ToString().ParseIntoArray(Parts, TEXT("."));
@@ -197,12 +252,30 @@ void UTKCard_Trick::OnUse(ATKPlayerControllerBase* User, ATKPlayerStateBase* Tar
 				{
 					DrawCount = FCString::Atoi(*Parts.Last());
 				}
+				DrawCount = FMath::Max(DrawCount, 1);
 
-				// TODO: 通过 DeckComponent 摸牌
-				UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Draw - [%s] draws %d cards"), *User->GetName(), FMath::Max(DrawCount, 1));
+				// 从牌堆摸牌到手牌
+				ATKGameModeBase* GameMode = Cast<ATKGameModeBase>(User->GetWorld()->GetAuthGameMode());
+				UTKDeckComponent* Deck = GameMode ? GameMode->GetDeckComponent() : nullptr;
+				ATKPlayerStateBase* UserPS = Cast<ATKPlayerStateBase>(User->PlayerState);
+				UTKCardZoneComponent* UserZone = UserPS ? UserPS->GetCardZone() : nullptr;
+
+				if (Deck && UserZone)
+				{
+					TArray<UTKCardBase*> Drawn = Deck->DrawMultipleCards(DrawCount);
+					for (UTKCardBase* Card : Drawn)
+					{
+						if (Card) UserZone->AddCardToHand(Card);
+					}
+					UE_LOG(LogTKGame, Log, TEXT("TKCard_Trick::Draw - [%s] draws %d cards"), *User->GetName(), Drawn.Num());
+				}
+				bHandled = true;
 				break;
 			}
 		}
-		Super::OnUse(User, Target);
+		if (!bHandled)
+		{
+			Super::OnUse(User, Target);
+		}
 	}
 }

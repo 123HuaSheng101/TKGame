@@ -65,6 +65,14 @@ public:
 	UFUNCTION(Exec)
 	void ShowPlayerStatus();
 
+	/** 装备手牌中的第N张卡 */
+	UFUNCTION(Exec)
+	void EquipCard(int32 CardIndex);
+
+	/** 查看当前玩家装备区 */
+	UFUNCTION(Exec)
+	void ShowEquip();
+
 protected:
 	/** 确保调试 HUD 已创建并显示 */
 	void EnsureDebugHud();

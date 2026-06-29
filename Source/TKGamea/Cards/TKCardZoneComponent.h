@@ -6,6 +6,7 @@
 #include "TKCardZoneComponent.generated.h"
 
 class UTKCardBase;
+class UTKDeckComponent;
 
 /**
  * 牌区组件
@@ -62,16 +63,33 @@ public:
 	bool RemoveFromJudgement(UTKCardBase* Card);
 
 	/**
-	 * 清空所有牌区
-	 * 通常用于玩家死亡时清理
+	 * 清空所有牌区（仅清空数组，不回收卡牌）
+	 * 
+	 * ⚠️ 调用前必须先遍历牌区将牌移入弃牌堆。
+	 *    需要自动回收请使用 ClearAndDiscardAll()。
 	 */
 	UFUNCTION(BlueprintCallable, Category = "CardZone")
 	void ClearAllZones();
+
+	/**
+	 * 清空所有牌区并将牌回收至弃牌堆（死亡/断线时使用）
+	 * @param Deck 牌堆组件（用于 DiscardCard 回收）
+	 */
+	UFUNCTION(BlueprintCallable, Category = "CardZone")
+	void ClearAndDiscardAll(UTKDeckComponent* Deck);
 
 	// ---- 复制 ----
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
+	/** 同步 HandCardCount 到 Owner PlayerState（操作手牌后自动调用） */
+	void SyncHandCardCount();
+
+	/** 根据 UTKCardBase 数组构建 FTKCardInstance 数组（客户端可见） */
+	static TArray<FTKCardInstance> BuildInstanceArray(const TArray<TObjectPtr<UTKCardBase>>& Cards);
+
+	// ---- 服务器端 UObject 牌区（权威数据） ----
+
 	/** 手牌区 */
 	UPROPERTY(Replicated)
 	TArray<TObjectPtr<UTKCardBase>> HandCards;
@@ -83,4 +101,18 @@ protected:
 	/** 判定区 */
 	UPROPERTY(Replicated)
 	TArray<TObjectPtr<UTKCardBase>> JudgementCards;
+
+	// ---- 客户端可读副本（FTKCardInstance 为 USTRUCT，天然支持网络复制） ----
+
+	/** 手牌区客户端副本 */
+	UPROPERTY(Replicated)
+	TArray<FTKCardInstance> ReplicatedHandCards;
+
+	/** 装备区客户端副本 */
+	UPROPERTY(Replicated)
+	TArray<FTKCardInstance> ReplicatedEquipmentCards;
+
+	/** 判定区客户端副本 */
+	UPROPERTY(Replicated)
+	TArray<FTKCardInstance> ReplicatedJudgementCards;
 };

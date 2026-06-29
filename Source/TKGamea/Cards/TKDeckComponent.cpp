@@ -177,3 +177,51 @@ void UTKDeckComponent::DiscardCard(UTKCardBase* Card)
 	DiscardPile.Add(Card);
 	UE_LOG(LogTKGame, Log, TEXT("Card [%s] discarded to pile"), *Card->CardDefId.ToString());
 }
+
+// ===== 判定系统 =====
+
+bool UTKDeckComponent::ExecuteJudgement(const FGameplayTag& JudgeTag, ETKCardSuit& OutSuit, int32& OutRank, UTKCardBase*& OutCard)
+{
+	OutCard = DrawCard();
+	if (!OutCard)
+	{
+		UE_LOG(LogTKGame, Warning, TEXT("ExecuteJudgement: DrawCard returned null for tag [%s]"), *JudgeTag.ToString());
+		return false;
+	}
+
+	OutSuit = OutCard->Suit;
+	OutRank = OutCard->Rank;
+
+	// 判定牌进入弃牌堆
+	DiscardCard(OutCard);
+
+	bool bEffective = IsJudgementEffective(JudgeTag, OutSuit, OutRank);
+	UE_LOG(LogTKGame, Log, TEXT("ExecuteJudgement: tag=[%s] card=[%s] suit=%d rank=%d -> %s"),
+		*JudgeTag.ToString(), *OutCard->CardDefId.ToString(), (uint8)OutSuit, OutRank,
+		bEffective ? TEXT("EFFECTIVE") : TEXT("PASSED"));
+	return bEffective;
+}
+
+bool UTKDeckComponent::IsJudgementEffective(const FGameplayTag& JudgeTag, ETKCardSuit Suit, int32 Rank)
+{
+	static FGameplayTag Tag_SkipPlay  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Skip.Play"),  false);
+	static FGameplayTag Tag_SkipDraw  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Skip.Draw"),  false);
+	static FGameplayTag Tag_Lightning = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Lightning"),  false);
+
+	if (JudgeTag == Tag_SkipPlay)
+	{
+		// 乐不思蜀：非红桃生效
+		return Suit != ETKCardSuit::Heart;
+	}
+	if (JudgeTag == Tag_SkipDraw)
+	{
+		// 兵粮寸断：非梅花生效
+		return Suit != ETKCardSuit::Club;
+	}
+	if (JudgeTag == Tag_Lightning)
+	{
+		// 闪电：黑桃 2~9 生效
+		return Suit == ETKCardSuit::Spade && Rank >= 2 && Rank <= 9;
+	}
+	return false;
+}
