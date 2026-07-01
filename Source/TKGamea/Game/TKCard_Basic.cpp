@@ -7,10 +7,7 @@
 #include "Core/TKGameStateBase.h"
 #include "Core/TKTurnComponentBase.h"
 
-static FGameplayTag Tag_Card_Slash  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Slash"),  false);
-static FGameplayTag Tag_Card_Dodge  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"),  false);
-static FGameplayTag Tag_Card_Peach  = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Peach"),  false);
-static FGameplayTag Tag_Card_Wine   = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Wine"),   false);
+
 
 bool UTKCard_Basic::IsResponseCard() const
 {

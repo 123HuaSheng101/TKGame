@@ -5,7 +5,18 @@
 #include "CoreMinimal.h"
 #include "TKCardBase.h"
 #include "TKCard_Trick.generated.h"
-
+// ---- 效果标签 ----
+static FGameplayTag Tag_Card_Snatch          = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Snatch"),          false);
+static FGameplayTag Tag_Card_Dismantle       = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dismantle"),       false);
+static FGameplayTag Tag_Card_Negate          = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Negate"),          false);
+static FGameplayTag Tag_Card_Duel            = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Duel"),            false);
+static FGameplayTag Tag_Card_AOE_RequireSlash= FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.AOE.RequireSlash"),false);
+static FGameplayTag Tag_Card_AOE_RequireDodge= FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.AOE.RequireDodge"),false);
+static FGameplayTag Tag_Card_AOE_Heal_1      = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.AOE.Heal.1"),      false);
+static FGameplayTag Tag_Card_Harvest         = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Harvest"),         false);
+static FGameplayTag Tag_Card_BorrowKnife     = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.BorrowKnife"),     false);
+// static FGameplayTag Tag_Card_Slash           = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Slash"),           false);
+// static FGameplayTag Tag_Card_Dodge           = FGameplayTag::RequestGameplayTag(TEXT("Card.Effect.Dodge"),           false);
 /**
  * 非延时锦囊子类
  *
